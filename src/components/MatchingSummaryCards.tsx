@@ -3,16 +3,17 @@ import {
   FileText,
   CheckCircle2,
   AlertTriangle,
+  Tag,
   XCircle,
   Boxes,
 } from 'lucide-react';
-import { MatchingSummary } from '../types/matchingTypes';
+import { MatchingSummary, MatchStatus } from '../types/matchingTypes';
 import { formatNumber } from '../utils/formatters';
 
 interface MatchingSummaryCardsProps {
   summary: MatchingSummary;
   selectedStatus: string;
-  onSelectStatus: (status: 'ALL' | 'EXACT_SKU' | 'SKU_INDUK_FALLBACK' | 'NOT_FOUND') => void;
+  onSelectStatus: (status: 'ALL' | MatchStatus) => void;
 }
 
 export const MatchingSummaryCards: React.FC<MatchingSummaryCardsProps> = ({
@@ -21,7 +22,7 @@ export const MatchingSummaryCards: React.FC<MatchingSummaryCardsProps> = ({
   onSelectStatus,
 }) => {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
       {/* Total Data Income SKU */}
       <div
         onClick={() => onSelectStatus('ALL')}
@@ -107,6 +108,36 @@ export const MatchingSummaryCards: React.FC<MatchingSummaryCardsProps> = ({
         </p>
       </div>
 
+      {/* Nama Produk Fallback */}
+      <div
+        onClick={() => onSelectStatus('PRODUCT_NAME_FALLBACK')}
+        className={`bg-white rounded-2xl p-4 border transition-all cursor-pointer shadow-xs hover:shadow-md ${
+          selectedStatus === 'PRODUCT_NAME_FALLBACK'
+            ? 'border-blue-500 ring-2 ring-blue-400/30'
+            : 'border-stone-200'
+        }`}
+      >
+        <div className="flex items-center justify-between text-stone-500 mb-2">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-blue-700">
+            NAMA PRODUK FALLBACK
+          </span>
+          <div className="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center text-blue-700">
+            <Tag className="w-4 h-4" />
+          </div>
+        </div>
+        <div className="flex items-baseline gap-2">
+          <span className="text-2xl font-black text-blue-700 tracking-tight font-mono">
+            {formatNumber(summary.productNameFallbackCount)}
+          </span>
+          <span className="text-xs font-bold text-blue-800 bg-blue-100 px-1.5 py-0.5 rounded">
+            {summary.productNameFallbackPercentage.toFixed(1)}%
+          </span>
+        </div>
+        <p className="text-[11px] text-stone-500 mt-1">
+          SKU All Order kosong, cocok via Nama Produk
+        </p>
+      </div>
+
       {/* Tidak Ditemukan */}
       <div
         onClick={() => onSelectStatus('NOT_FOUND')}
@@ -133,7 +164,7 @@ export const MatchingSummaryCards: React.FC<MatchingSummaryCardsProps> = ({
           </span>
         </div>
         <p className="text-[11px] text-stone-500 mt-1">
-          SKU / SKU Induk tidak terdaftar di All Order
+          Tidak terdaftar di All Order
         </p>
       </div>
 

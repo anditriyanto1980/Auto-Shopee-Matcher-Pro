@@ -2,5 +2,7 @@
   "name": "Shopee Report Processor - Tahap 1",
   "description": "Upload 3 file Shopee untuk memvalidasi data dan struktur kolom sebelum proses matching.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

@@ -6,6 +6,8 @@ export interface FinalReportSummary {
   exactSkuPercentage: number;
   skuIndukFallbackCount: number;
   skuIndukFallbackPercentage: number;
+  productNameFallbackCount: number;
+  productNameFallbackPercentage: number;
   notFoundCount: number;
   notFoundPercentage: number;
   totalQuantityFound: number;
@@ -26,6 +28,7 @@ export interface ReconciliationResult {
   totalMatchingRows: number;
   exactCount: number;
   fallbackCount: number;
+  productNameFallbackCount: number;
   notFoundCount: number;
   sumCategories: number;
   isCountBalanced: boolean;
@@ -39,4 +42,9 @@ export interface ExportValidationResult {
   warnings: string[];
 }
 
-export type ReportTab = 'hasil' | 'tidak_cocok' | 'sku_induk_fallback' | 'audit';
+export type ReportTab =
+  | 'hasil'
+  | 'tidak_cocok'
+  | 'sku_induk_fallback'
+  | 'nama_produk_fallback'
+  | 'audit';

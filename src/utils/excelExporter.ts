@@ -64,6 +64,7 @@ export function exportToExcel({
       ['Total Data Income SKU', summary.totalIncomeSkuRows, '100.0%'],
       ['Exact SKU (Prioritas 1)', summary.exactSkuCount, `${summary.exactSkuPercentage.toFixed(1)}%`],
       ['SKU Induk Fallback (Prioritas 2)', summary.skuIndukFallbackCount, `${summary.skuIndukFallbackPercentage.toFixed(1)}%`],
+      ['Nama Produk Fallback (Prioritas 3)', summary.productNameFallbackCount, `${summary.productNameFallbackPercentage.toFixed(1)}%`],
       ['Tidak Ditemukan', summary.notFoundCount, `${summary.notFoundPercentage.toFixed(1)}%`],
       [],
       ['TOTAL QTY & PENGHASILAN', 'NILAI', 'FORMAT'],
@@ -71,7 +72,7 @@ export function exportToExcel({
       ['Total Penghasilan Shopee', summary.totalIncomeAmount, summary.formattedTotalIncome],
       [],
       ['REKONSILIASI HASIL', 'STATUS', 'VERIFIKASI'],
-      ['Status Rekonsiliasi', reconciliation.status === 'SUCCESS' ? '✓ REKONSILIASI SUKSES' : '❌ GAGAL', 'Exact + Fallback + Tidak Ditemukan = Total'],
+      ['Status Rekonsiliasi', reconciliation.status === 'SUCCESS' ? '✓ REKONSILIASI SUKSES' : '❌ GAGAL', 'Exact + SKU Induk + Nama Produk + Tidak Ditemukan = Total'],
       ['Total Baris Income', reconciliation.totalIncomeRows, 'Sesuai sumber Income'],
       ['Total Baris Hasil', reconciliation.totalMatchingRows, '100% baris diproses'],
       [],
@@ -80,7 +81,7 @@ export function exportToExcel({
     ];
 
     const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
-    wsSummary['!cols'] = [{ wch: 32 }, { wch: 25 }, { wch: 35 }];
+    wsSummary['!cols'] = [{ wch: 34 }, { wch: 25 }, { wch: 40 }];
     XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
 
     // ==========================================
@@ -103,6 +104,8 @@ export function exportToExcel({
           ? 'Exact SKU'
           : item.matchStatus === 'SKU_INDUK_FALLBACK'
           ? 'SKU Induk Fallback'
+          : item.matchStatus === 'PRODUCT_NAME_FALLBACK'
+          ? 'Nama Produk Fallback'
           : 'Tidak Ditemukan';
 
       const sourceLabel =
@@ -216,7 +219,49 @@ export function exportToExcel({
     XLSX.utils.book_append_sheet(wb, wsFallback, 'SKU Induk Fallback');
 
     // ==========================================
-    // SHEET 5: Audit
+    // SHEET 5: Nama Produk Fallback
+    // ==========================================
+    const prodFallbackHeaders = [
+      'No.',
+      'No. Pesanan',
+      'SKU Income',
+      'Nama Produk',
+      'Qty Pembelian',
+      'Sumber All Order',
+      'Status Matching',
+      'Keterangan',
+    ];
+
+    const prodFallbackItems = results.filter(
+      (r) => r.matchStatus === 'PRODUCT_NAME_FALLBACK',
+    );
+    const prodFallbackRows = prodFallbackItems.map((item, idx) => [
+      idx + 1,
+      item.orderNumber,
+      item.incomeSku,
+      item.productName || '-',
+      item.quantity !== null && item.quantity !== undefined ? item.quantity : '-',
+      item.sourceMonth === 'current'
+        ? 'All Order Bulan Ini'
+        : item.sourceMonth === 'previous'
+        ? 'All Order Bulan Lalu'
+        : '-',
+      'Nama Produk Fallback',
+      'SKU & SKU Induk All Order kosong, berhasil cocok via Nama Produk identik',
+    ]);
+
+    const prodFallbackSheetData = [prodFallbackHeaders, ...prodFallbackRows];
+    const wsProdFallback = XLSX.utils.aoa_to_sheet(prodFallbackSheetData);
+    wsProdFallback['!cols'] = calculateAutoWidths(prodFallbackSheetData);
+    if (prodFallbackRows.length > 0) {
+      wsProdFallback['!autofilter'] = { ref: `A1:H${prodFallbackRows.length + 1}` };
+    }
+    wsProdFallback['!freeze'] = { xSplit: 0, ySplit: 1 };
+    wsProdFallback['!views'] = [{ state: 'frozen', ySplit: 1 }];
+    XLSX.utils.book_append_sheet(wb, wsProdFallback, 'Nama Produk Fallback');
+
+    // ==========================================
+    // SHEET 6: Audit
     // ==========================================
     const auditData: (string | number | boolean | null)[][] = [
       ['AUDIT REPORT & DATA RECONCILIATION'],
@@ -226,6 +271,7 @@ export function exportToExcel({
       ['1. MATCHING SUMMARY', 'JUMLAH BARIS', 'PERSENTASE'],
       ['Exact SKU (No. Pesanan + SKU)', summary.exactSkuCount, `${summary.exactSkuPercentage.toFixed(1)}%`],
       ['SKU Induk Fallback (No. Pesanan + SKU Induk)', summary.skuIndukFallbackCount, `${summary.skuIndukFallbackPercentage.toFixed(1)}%`],
+      ['Nama Produk Fallback (No. Pesanan + Nama Produk)', summary.productNameFallbackCount, `${summary.productNameFallbackPercentage.toFixed(1)}%`],
       ['Tidak Ditemukan', summary.notFoundCount, `${summary.notFoundPercentage.toFixed(1)}%`],
       ['Total Data Income SKU', summary.totalIncomeSkuRows, '100%'],
       [],
@@ -245,10 +291,11 @@ export function exportToExcel({
     auditData.push(['Total Baris Income SKU', reconciliation.totalIncomeRows, 'Terdaftar di Income']);
     auditData.push(['Total Baris Hasil Matching', reconciliation.totalMatchingRows, 'Diproses Mesin Matching']);
     auditData.push(['Total Exact Match', reconciliation.exactCount, 'Match Priority 1']);
-    auditData.push(['Total Fallback', reconciliation.fallbackCount, 'Match Priority 2']);
-    auditData.push(['Total Tidak Ditemukan', reconciliation.notFoundCount, 'Priority 3']);
+    auditData.push(['Total SKU Induk Fallback', reconciliation.fallbackCount, 'Match Priority 2']);
+    auditData.push(['Total Nama Produk Fallback', reconciliation.productNameFallbackCount, 'Match Priority 3']);
+    auditData.push(['Total Tidak Ditemukan', reconciliation.notFoundCount, 'Priority 4']);
     auditData.push([
-      'Status Rekonsiliasi (Exact + Fallback + Not Found == Total)',
+      'Status Rekonsiliasi (Exact + Fallback1 + Fallback2 + Not Found == Total)',
       reconciliation.sumCategories,
       reconciliation.status === 'SUCCESS' ? '✓ REKONSILIASI BERHASIL (SEIMBANG)' : '❌ GAGAL',
     ]);

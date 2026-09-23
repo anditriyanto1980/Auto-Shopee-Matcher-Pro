@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   XCircle,
+  Tag,
   Eye,
   FileSpreadsheet,
   ChevronLeft,
@@ -111,13 +112,35 @@ export const FinalReportDashboard: React.FC<FinalReportDashboardProps> = ({
     return list;
   }, [results, searchQuery]);
 
+  // Dataset for Tab 4 (Nama Produk Fallback)
+  const prodNameFallbackResults = useMemo(() => {
+    let list = results.filter((r) => r.matchStatus === 'PRODUCT_NAME_FALLBACK');
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      list = list.filter(
+        (item) =>
+          item.orderNumber.toLowerCase().includes(q) ||
+          item.incomeSku.toLowerCase().includes(q) ||
+          item.productName.toLowerCase().includes(q),
+      );
+    }
+    return list;
+  }, [results, searchQuery]);
+
   // Determine current active list based on tab
   const activeDataset = useMemo(() => {
     if (activeTab === 'hasil') return filteredResults;
     if (activeTab === 'tidak_cocok') return tidakCocokResults;
     if (activeTab === 'sku_induk_fallback') return fallbackResults;
+    if (activeTab === 'nama_produk_fallback') return prodNameFallbackResults;
     return [];
-  }, [activeTab, filteredResults, tidakCocokResults, fallbackResults]);
+  }, [
+    activeTab,
+    filteredResults,
+    tidakCocokResults,
+    fallbackResults,
+    prodNameFallbackResults,
+  ]);
 
   // Pagination calculation
   const totalPages = Math.max(1, Math.ceil(activeDataset.length / pageSize));
@@ -228,13 +251,24 @@ export const FinalReportDashboard: React.FC<FinalReportDashboardProps> = ({
         </div>
       )}
 
-      {/* Section 2: SUMMARY DASHBOARD (6 Cards) */}
+      {/* Section 2: SUMMARY DASHBOARD */}
       <SummaryCardsTahap3
         summary={summary}
         selectedStatus={statusFilter}
         onSelectStatus={(status) => {
-          setStatusFilter(status);
-          setActiveTab('hasil');
+          if (status === 'SKU_INDUK_FALLBACK') {
+            setActiveTab('sku_induk_fallback');
+            setStatusFilter('SKU_INDUK_FALLBACK');
+          } else if (status === 'PRODUCT_NAME_FALLBACK') {
+            setActiveTab('nama_produk_fallback');
+            setStatusFilter('PRODUCT_NAME_FALLBACK');
+          } else if (status === 'NOT_FOUND') {
+            setActiveTab('tidak_cocok');
+            setStatusFilter('NOT_FOUND');
+          } else {
+            setActiveTab('hasil');
+            setStatusFilter(status);
+          }
           setCurrentPage(1);
         }}
       />
@@ -288,6 +322,20 @@ export const FinalReportDashboard: React.FC<FinalReportDashboardProps> = ({
 
             <button
               onClick={() => {
+                setActiveTab('nama_produk_fallback');
+                setCurrentPage(1);
+              }}
+              className={`px-4 py-2.5 rounded-t-2xl text-xs sm:text-sm font-bold border-b-2 transition-all cursor-pointer ${
+                activeTab === 'nama_produk_fallback'
+                  ? 'border-blue-600 text-blue-700 bg-white shadow-2xs'
+                  : 'border-transparent text-stone-500 hover:text-stone-800 hover:bg-stone-50'
+              }`}
+            >
+              NAMA PRODUK FALLBACK ({summary.productNameFallbackCount})
+            </button>
+
+            <button
+              onClick={() => {
                 setActiveTab('audit');
               }}
               className={`px-4 py-2.5 rounded-t-2xl text-xs sm:text-sm font-bold border-b-2 transition-all cursor-pointer ${
@@ -301,13 +349,14 @@ export const FinalReportDashboard: React.FC<FinalReportDashboardProps> = ({
           </div>
         </div>
 
-        {/* Tab 4: AUDIT VIEW */}
+        {/* Tab 5: AUDIT VIEW */}
         {activeTab === 'audit' && (
           <AuditPanel
             summary={summary}
             reconciliation={reconciliation}
             duplicates={duplicates}
             period={period}
+            results={results}
           />
         )}
 
@@ -366,6 +415,21 @@ export const FinalReportDashboard: React.FC<FinalReportDashboardProps> = ({
 
                     <button
                       onClick={() => {
+                        setStatusFilter('PRODUCT_NAME_FALLBACK');
+                        setCurrentPage(1);
+                      }}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                        statusFilter === 'PRODUCT_NAME_FALLBACK'
+                          ? 'bg-blue-600 text-white shadow-xs'
+                          : 'text-stone-600 hover:text-blue-700'
+                      }`}
+                    >
+                      <span className="w-2 h-2 rounded-full bg-blue-400" />
+                      Nama Produk Fallback ({summary.productNameFallbackCount})
+                    </button>
+
+                    <button
+                      onClick={() => {
                         setStatusFilter('NOT_FOUND');
                         setCurrentPage(1);
                       }}
@@ -389,6 +453,11 @@ export const FinalReportDashboard: React.FC<FinalReportDashboardProps> = ({
                     {activeTab === 'sku_induk_fallback' && (
                       <span className="text-amber-800 font-semibold bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-200">
                         Menampilkan transaksi yang berhasil dicocokkan via fallback SKU Induk
+                      </span>
+                    )}
+                    {activeTab === 'nama_produk_fallback' && (
+                      <span className="text-blue-800 font-semibold bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-200">
+                        Menampilkan transaksi yang berhasil dicocokkan via fallback Nama Produk (SKU All Order kosong)
                       </span>
                     )}
                   </div>
@@ -535,6 +604,12 @@ export const FinalReportDashboard: React.FC<FinalReportDashboardProps> = ({
                                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200">
                                   <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
                                   SKU Induk Fallback
+                                </span>
+                              )}
+                              {item.matchStatus === 'PRODUCT_NAME_FALLBACK' && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-800 border border-blue-200">
+                                  <Tag className="w-3.5 h-3.5 text-blue-600" />
+                                  Nama Produk Fallback
                                 </span>
                               )}
                               {item.matchStatus === 'NOT_FOUND' && (

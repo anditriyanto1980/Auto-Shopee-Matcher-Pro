@@ -1,4 +1,8 @@
-export type MatchStatus = 'EXACT_SKU' | 'SKU_INDUK_FALLBACK' | 'NOT_FOUND';
+export type MatchStatus =
+  | 'EXACT_SKU'
+  | 'SKU_INDUK_FALLBACK'
+  | 'PRODUCT_NAME_FALLBACK'
+  | 'NOT_FOUND';
 
 export interface OrderRowDetail {
   sourceMonth: 'current' | 'previous';
@@ -34,6 +38,8 @@ export interface MatchingSummary {
   exactSkuPercentage: number;
   skuIndukFallbackCount: number;
   skuIndukFallbackPercentage: number;
+  productNameFallbackCount: number;
+  productNameFallbackPercentage: number;
   notFoundCount: number;
   notFoundPercentage: number;
   totalQuantityFound: number;

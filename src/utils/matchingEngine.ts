@@ -41,15 +41,33 @@ interface InternalOrderRow {
   orderNumber: string;
   sku: string;
   parentSku: string;
+  productName: string;
   quantity: number;
   normalizedOrder: string;
   normalizedSku: string;
   normalizedParentSku: string;
+  normalizedProductName: string;
 }
 
 interface OrderIndex {
   exactMap: Map<string, InternalOrderRow[]>;
   parentMap: Map<string, InternalOrderRow[]>;
+  productNameMap: Map<string, InternalOrderRow[]>;
+}
+
+/**
+ * Normalizes product name strictly as instructed:
+ * - trim leading/trailing space
+ * - convert to lowercase
+ * - collapse multiple whitespace to single space
+ * - NO fuzzy/levenshtein/contains
+ */
+export function normalizeProductName(name: unknown): string {
+  if (name === null || name === undefined) return '';
+  return String(name)
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
 }
 
 /**
@@ -61,9 +79,10 @@ function buildOrderIndex(
 ): OrderIndex {
   const exactMap = new Map<string, InternalOrderRow[]>();
   const parentMap = new Map<string, InternalOrderRow[]>();
+  const productNameMap = new Map<string, InternalOrderRow[]>();
 
   if (!file.rawRows || !file.validation) {
-    return { exactMap, parentMap };
+    return { exactMap, parentMap, productNameMap };
   }
 
   const rawRows = file.rawRows;
@@ -75,10 +94,11 @@ function buildOrderIndex(
   const orderCol = normHeaders.indexOf('no. pesanan');
   const skuCol = normHeaders.indexOf('nomor referensi sku');
   const parentSkuCol = normHeaders.indexOf('sku induk');
+  const productNameCol = normHeaders.indexOf('nama produk');
   const qtyCol = normHeaders.indexOf('jumlah');
 
   if (orderCol === -1 || qtyCol === -1) {
-    return { exactMap, parentMap };
+    return { exactMap, parentMap, productNameMap };
   }
 
   for (let r = headerRowIndex + 1; r < rawRows.length; r++) {
@@ -88,11 +108,13 @@ function buildOrderIndex(
     const rawOrder = row[orderCol];
     const rawSku = skuCol !== -1 ? row[skuCol] : '';
     const rawParentSku = parentSkuCol !== -1 ? row[parentSkuCol] : '';
+    const rawProductName = productNameCol !== -1 ? row[productNameCol] : '';
     const rawQty = row[qtyCol];
 
     const normalizedOrder = normalizeKey(rawOrder);
     const normalizedSku = normalizeKey(rawSku);
     const normalizedParentSku = normalizeKey(rawParentSku);
+    const normalizedProductName = normalizeProductName(rawProductName);
     const quantity = parseQuantity(rawQty);
 
     if (!normalizedOrder) continue;
@@ -104,10 +126,12 @@ function buildOrderIndex(
       orderNumber: String(rawOrder || '').trim(),
       sku: String(rawSku || '').trim(),
       parentSku: String(rawParentSku || '').trim(),
+      productName: String(rawProductName || '').trim(),
       quantity,
       normalizedOrder,
       normalizedSku,
       normalizedParentSku,
+      normalizedProductName,
     };
 
     // Index by Exact SKU: order + '|||' + sku
@@ -125,9 +149,18 @@ function buildOrderIndex(
       existing.push(orderRow);
       parentMap.set(parentKey, existing);
     }
+
+    // Index by Product Name for Priority 3 Fallback:
+    // STRICT CONSTRAINT: Only indexed when BOTH Nomor Referensi SKU and SKU Induk are EMPTY
+    if (!normalizedSku && !normalizedParentSku && normalizedProductName) {
+      const prodKey = `${normalizedOrder}|||${normalizedProductName}`;
+      const existing = productNameMap.get(prodKey) || [];
+      existing.push(orderRow);
+      productNameMap.set(prodKey, existing);
+    }
   }
 
-  return { exactMap, parentMap };
+  return { exactMap, parentMap, productNameMap };
 }
 
 /**
@@ -150,6 +183,8 @@ export function runMatchingEngine(
         exactSkuPercentage: 0,
         skuIndukFallbackCount: 0,
         skuIndukFallbackPercentage: 0,
+        productNameFallbackCount: 0,
+        productNameFallbackPercentage: 0,
         notFoundCount: 0,
         notFoundPercentage: 0,
         totalQuantityFound: 0,
@@ -188,6 +223,7 @@ export function runMatchingEngine(
   const results: MatchedOrderItem[] = [];
   let exactSkuCount = 0;
   let skuIndukFallbackCount = 0;
+  let productNameFallbackCount = 0;
   let notFoundCount = 0;
   let totalQuantityFound = 0;
 
@@ -210,8 +246,10 @@ export function runMatchingEngine(
 
     const normalizedOrder = normalizeKey(rawOrder);
     const normalizedSku = normalizeKey(rawSku);
+    const normalizedIncomeProdName = normalizeProductName(rawProductName);
 
     const compositeKey = `${normalizedOrder}|||${normalizedSku}`;
+    const prodCompositeKey = `${normalizedOrder}|||${normalizedIncomeProdName}`;
 
     let matchStatus: MatchStatus = 'NOT_FOUND';
     let matchedRows: InternalOrderRow[] = [];
@@ -266,6 +304,29 @@ export function runMatchingEngine(
       }
     }
 
+    // PRIORITY 3: Nama Produk Fallback (only if Priority 1 and 2 not found, and All Order SKU & Parent SKU are empty)
+    if (matchStatus === 'NOT_FOUND' && normalizedIncomeProdName) {
+      const currentProd = currentIndex.productNameMap.get(prodCompositeKey);
+      if (currentProd && currentProd.length > 0) {
+        matchStatus = 'PRODUCT_NAME_FALLBACK';
+        matchedRows = currentProd;
+        sourceMonth = 'current';
+        sourceFile = currentOrderFile.fileName;
+        allOrderSku = currentProd[0].sku;
+        allOrderParentSku = currentProd[0].parentSku;
+      } else {
+        const prevProd = prevIndex.productNameMap.get(prodCompositeKey);
+        if (prevProd && prevProd.length > 0) {
+          matchStatus = 'PRODUCT_NAME_FALLBACK';
+          matchedRows = prevProd;
+          sourceMonth = 'previous';
+          sourceFile = previousOrderFile.fileName;
+          allOrderSku = prevProd[0].sku;
+          allOrderParentSku = prevProd[0].parentSku;
+        }
+      }
+    }
+
     // Calculate final Qty
     let quantity: number | null = null;
     if (matchStatus !== 'NOT_FOUND' && matchedRows.length > 0) {
@@ -277,6 +338,8 @@ export function runMatchingEngine(
         exactSkuCount++;
       } else if (matchStatus === 'SKU_INDUK_FALLBACK') {
         skuIndukFallbackCount++;
+      } else if (matchStatus === 'PRODUCT_NAME_FALLBACK') {
+        productNameFallbackCount++;
       }
     } else {
       matchStatus = 'NOT_FOUND';
@@ -319,9 +382,14 @@ export function runMatchingEngine(
   }
 
   const totalIncomeSkuRows = results.length;
-  const exactSkuPercentage = totalIncomeSkuRows > 0 ? (exactSkuCount / totalIncomeSkuRows) * 100 : 0;
-  const skuIndukFallbackPercentage = totalIncomeSkuRows > 0 ? (skuIndukFallbackCount / totalIncomeSkuRows) * 100 : 0;
-  const notFoundPercentage = totalIncomeSkuRows > 0 ? (notFoundCount / totalIncomeSkuRows) * 100 : 0;
+  const exactSkuPercentage =
+    totalIncomeSkuRows > 0 ? (exactSkuCount / totalIncomeSkuRows) * 100 : 0;
+  const skuIndukFallbackPercentage =
+    totalIncomeSkuRows > 0 ? (skuIndukFallbackCount / totalIncomeSkuRows) * 100 : 0;
+  const productNameFallbackPercentage =
+    totalIncomeSkuRows > 0 ? (productNameFallbackCount / totalIncomeSkuRows) * 100 : 0;
+  const notFoundPercentage =
+    totalIncomeSkuRows > 0 ? (notFoundCount / totalIncomeSkuRows) * 100 : 0;
 
   return {
     results,
@@ -331,6 +399,8 @@ export function runMatchingEngine(
       exactSkuPercentage,
       skuIndukFallbackCount,
       skuIndukFallbackPercentage,
+      productNameFallbackCount,
+      productNameFallbackPercentage,
       notFoundCount,
       notFoundPercentage,
       totalQuantityFound,

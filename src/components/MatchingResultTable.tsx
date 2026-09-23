@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   XCircle,
+  Tag,
   ChevronLeft,
   ChevronRight,
   Eye,
@@ -112,6 +113,21 @@ export const MatchingResultTable: React.FC<MatchingResultTableProps> = ({
             >
               <span className="w-2 h-2 rounded-full bg-amber-400" />
               SKU Induk Fallback ({results.filter((r) => r.matchStatus === 'SKU_INDUK_FALLBACK').length})
+            </button>
+
+            <button
+              onClick={() => {
+                onStatusChange('PRODUCT_NAME_FALLBACK');
+                setCurrentPage(1);
+              }}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                selectedStatus === 'PRODUCT_NAME_FALLBACK'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-stone-600 hover:text-blue-700'
+              }`}
+            >
+              <span className="w-2 h-2 rounded-full bg-blue-400" />
+              Nama Produk Fallback ({results.filter((r) => r.matchStatus === 'PRODUCT_NAME_FALLBACK').length})
             </button>
 
             <button
@@ -260,6 +276,12 @@ export const MatchingResultTable: React.FC<MatchingResultTableProps> = ({
                         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200">
                           <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
                           SKU Induk Fallback
+                        </span>
+                      )}
+                      {item.matchStatus === 'PRODUCT_NAME_FALLBACK' && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-800 border border-blue-200">
+                          <Tag className="w-3.5 h-3.5 text-blue-600" />
+                          Nama Produk Fallback
                         </span>
                       )}
                       {item.matchStatus === 'NOT_FOUND' && (

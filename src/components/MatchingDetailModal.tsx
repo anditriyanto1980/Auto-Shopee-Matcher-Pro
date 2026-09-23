@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   XCircle,
+  Tag,
   Hash,
   Package,
   Layers,
@@ -39,6 +40,8 @@ export const MatchingDetailModal: React.FC<MatchingDetailModalProps> = ({
                   ? 'bg-emerald-100 text-emerald-700'
                   : item.matchStatus === 'SKU_INDUK_FALLBACK'
                   ? 'bg-amber-100 text-amber-700'
+                  : item.matchStatus === 'PRODUCT_NAME_FALLBACK'
+                  ? 'bg-blue-100 text-blue-700'
                   : 'bg-rose-100 text-rose-700'
               }`}
             >
@@ -71,6 +74,8 @@ export const MatchingDetailModal: React.FC<MatchingDetailModalProps> = ({
                 ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
                 : item.matchStatus === 'SKU_INDUK_FALLBACK'
                 ? 'bg-amber-50 border-amber-200 text-amber-900'
+                : item.matchStatus === 'PRODUCT_NAME_FALLBACK'
+                ? 'bg-blue-50 border-blue-200 text-blue-900'
                 : 'bg-rose-50 border-rose-200 text-rose-900'
             }`}
           >
@@ -80,6 +85,9 @@ export const MatchingDetailModal: React.FC<MatchingDetailModalProps> = ({
               )}
               {item.matchStatus === 'SKU_INDUK_FALLBACK' && (
                 <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+              )}
+              {item.matchStatus === 'PRODUCT_NAME_FALLBACK' && (
+                <Tag className="w-5 h-5 text-blue-600 shrink-0" />
               )}
               {item.matchStatus === 'NOT_FOUND' && (
                 <XCircle className="w-5 h-5 text-rose-600 shrink-0" />
@@ -93,6 +101,8 @@ export const MatchingDetailModal: React.FC<MatchingDetailModalProps> = ({
                     ? 'EXACT SKU'
                     : item.matchStatus === 'SKU_INDUK_FALLBACK'
                     ? 'SKU INDUK FALLBACK'
+                    : item.matchStatus === 'PRODUCT_NAME_FALLBACK'
+                    ? 'NAMA PRODUK FALLBACK'
                     : 'TIDAK DITEMUKAN'}
                 </span>
               </div>
@@ -198,6 +208,15 @@ export const MatchingDetailModal: React.FC<MatchingDetailModalProps> = ({
                 </span>
                 <span className="font-mono font-bold text-stone-700 text-xs">
                   Baris ke-{item.sourceRowIndex}
+                </span>
+              </div>
+            )}
+
+            {item.matchStatus === 'PRODUCT_NAME_FALLBACK' && (
+              <div className="p-3.5 bg-blue-50/80 flex items-center gap-2 text-blue-900 text-xs">
+                <Tag className="w-4 h-4 text-blue-600 shrink-0" />
+                <span>
+                  <strong>Fallback Nama Produk Aktif:</strong> SKU & SKU Induk pada All Order kosong, pencocokan berhasil dilakukan melalui No. Pesanan + Nama Produk identik.
                 </span>
               </div>
             )}

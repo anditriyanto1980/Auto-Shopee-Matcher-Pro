@@ -14,6 +14,7 @@ import { formatRupiah } from './formatters';
 export function computeReportSummary(results: MatchedOrderItem[]): FinalReportSummary {
   let exactSkuCount = 0;
   let skuIndukFallbackCount = 0;
+  let productNameFallbackCount = 0;
   let notFoundCount = 0;
   let totalQuantityFound = 0;
   let totalIncomeAmount = 0;
@@ -23,6 +24,8 @@ export function computeReportSummary(results: MatchedOrderItem[]): FinalReportSu
       exactSkuCount++;
     } else if (item.matchStatus === 'SKU_INDUK_FALLBACK') {
       skuIndukFallbackCount++;
+    } else if (item.matchStatus === 'PRODUCT_NAME_FALLBACK') {
+      productNameFallbackCount++;
     } else {
       notFoundCount++;
     }
@@ -48,6 +51,8 @@ export function computeReportSummary(results: MatchedOrderItem[]): FinalReportSu
     totalIncomeSkuRows > 0 ? (exactSkuCount / totalIncomeSkuRows) * 100 : 0;
   const skuIndukFallbackPercentage =
     totalIncomeSkuRows > 0 ? (skuIndukFallbackCount / totalIncomeSkuRows) * 100 : 0;
+  const productNameFallbackPercentage =
+    totalIncomeSkuRows > 0 ? (productNameFallbackCount / totalIncomeSkuRows) * 100 : 0;
   const notFoundPercentage =
     totalIncomeSkuRows > 0 ? (notFoundCount / totalIncomeSkuRows) * 100 : 0;
 
@@ -57,6 +62,8 @@ export function computeReportSummary(results: MatchedOrderItem[]): FinalReportSu
     exactSkuPercentage,
     skuIndukFallbackCount,
     skuIndukFallbackPercentage,
+    productNameFallbackCount,
+    productNameFallbackPercentage,
     notFoundCount,
     notFoundPercentage,
     totalQuantityFound,
@@ -115,7 +122,7 @@ export function detectDuplicates(
 
 /**
  * Performs reconciliation check on line items:
- * Exact + Fallback + Tidak Ditemukan == Total hasil matching
+ * Exact + SKU Induk Fallback + Nama Produk Fallback + Tidak Ditemukan == Total hasil matching
  */
 export function performReconciliation(
   totalIncomeRows: number,
@@ -123,10 +130,14 @@ export function performReconciliation(
 ): ReconciliationResult {
   const exactCount = results.filter((r) => r.matchStatus === 'EXACT_SKU').length;
   const fallbackCount = results.filter((r) => r.matchStatus === 'SKU_INDUK_FALLBACK').length;
+  const productNameFallbackCount = results.filter(
+    (r) => r.matchStatus === 'PRODUCT_NAME_FALLBACK',
+  ).length;
   const notFoundCount = results.filter((r) => r.matchStatus === 'NOT_FOUND').length;
   const totalMatchingRows = results.length;
 
-  const sumCategories = exactCount + fallbackCount + notFoundCount;
+  const sumCategories =
+    exactCount + fallbackCount + productNameFallbackCount + notFoundCount;
   const isCountBalanced = sumCategories === totalMatchingRows;
   const isTotalRowsMatched = totalMatchingRows === totalIncomeRows;
 
@@ -146,6 +157,7 @@ export function performReconciliation(
     totalMatchingRows,
     exactCount,
     fallbackCount,
+    productNameFallbackCount,
     notFoundCount,
     sumCategories,
     isCountBalanced,
