@@ -1,4 +1,8 @@
-export type FileCategory = 'income' | 'all_order_current' | 'all_order_previous';
+export type FileCategory =
+  | 'income'
+  | 'all_order_current'
+  | 'all_order_previous'
+  | 'settlement';
 
 export interface ExcelSheet {
   name: string;

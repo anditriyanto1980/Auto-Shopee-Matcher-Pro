@@ -22,6 +22,10 @@ export const REQUIRED_ALL_ORDER_HEADERS = [
   'Jumlah',
 ];
 
+export const REQUIRED_SETTLEMENT_HEADERS = [
+  'No. Pesanan',
+];
+
 const VALID_EXTENSIONS = ['.xlsx', '.xls', '.csv'];
 
 /**
@@ -382,6 +386,68 @@ export function validateAllOrderSheet(
 }
 
 /**
+ * Validates Settlement File
+ */
+export function validateSettlementSheet(
+  sheet: XLSX.WorkSheet,
+  sheetName: string,
+): FileValidationResult & { _rawData?: (string | number | boolean | null)[][]; _headerRowIndex?: number } {
+  const { sheetMeta, rawData, headerRowIndex, headers } = analyzeSheet(
+    sheet,
+    sheetName,
+    REQUIRED_SETTLEMENT_HEADERS,
+  );
+
+  const { detectedColumns, foundColumns, missingColumns } = matchHeaders(
+    headers,
+    REQUIRED_SETTLEMENT_HEADERS,
+  );
+
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  if (headers.length === 0) {
+    errors.push('Header tidak ditemukan.');
+  }
+
+  if (missingColumns.length > 0) {
+    for (const missing of missingColumns) {
+      errors.push(`Kolom identifikasi "${missing}" tidak ditemukan pada laporan settlement.`);
+    }
+  }
+
+  if (sheetMeta.rowCount === 0) {
+    warnings.push('File settlement tidak memiliki baris data.');
+  }
+
+  const previewRows = getPreviewRows(
+    rawData,
+    headerRowIndex,
+    headers,
+    detectedColumns,
+    20,
+  );
+
+  const valid = errors.length === 0;
+
+  return {
+    valid,
+    errors,
+    warnings,
+    detectedColumns,
+    foundColumns,
+    missingColumns,
+    rowCount: sheetMeta.rowCount,
+    columnCount: sheetMeta.columnCount,
+    allHeaders: headers,
+    previewRows,
+    totalFileRows: rawData.length,
+    _rawData: rawData,
+    _headerRowIndex: headerRowIndex,
+  };
+}
+
+/**
  * Process uploaded file completely
  */
 export async function processUploadedFile(
@@ -428,7 +494,11 @@ export async function processUploadedFile(
 
   // Step 4: Detect sheets & determine best active sheet
   const requiredHeaders =
-    category === 'income' ? REQUIRED_INCOME_HEADERS : REQUIRED_ALL_ORDER_HEADERS;
+    category === 'income'
+      ? REQUIRED_INCOME_HEADERS
+      : category === 'settlement'
+      ? REQUIRED_SETTLEMENT_HEADERS
+      : REQUIRED_ALL_ORDER_HEADERS;
 
   const sheetsMeta: ExcelSheet[] = [];
   let bestSheetName = sheetNames[0];
@@ -465,6 +535,8 @@ export async function processUploadedFile(
   let validationResult: FileValidationResult & { _rawData?: (string | number | boolean | null)[][]; _headerRowIndex?: number };
   if (category === 'income') {
     validationResult = validateIncomeSheet(targetSheet, targetSheetName);
+  } else if (category === 'settlement') {
+    validationResult = validateSettlementSheet(targetSheet, targetSheetName);
   } else {
     validationResult = validateAllOrderSheet(targetSheet, targetSheetName);
   }

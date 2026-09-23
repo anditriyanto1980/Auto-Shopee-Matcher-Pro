@@ -4,15 +4,33 @@ import {
   AuditDuplicateItem,
   FinalReportSummary,
   ReconciliationResult,
+  TransactionLedgerRecord,
+  OrderSummaryRecord,
+  ProductAnalysisRecord,
+  Top10Rankings,
+  ExpenseAnalysisSummary,
+  DailyAnalysisRecord,
+  FinancialExecutiveSummary,
 } from '../types/reportTypes';
 import { formatNumber, formatRupiah } from './formatters';
 
-interface ExportExcelOptions {
+export interface ProfessionalExportOptions {
   results: MatchedOrderItem[];
   summary: FinalReportSummary;
   reconciliation: ReconciliationResult;
   duplicates: AuditDuplicateItem[];
   period: string;
+  ledger: TransactionLedgerRecord[];
+  orderSummaries: OrderSummaryRecord[];
+  products: ProductAnalysisRecord[];
+  top10: Top10Rankings;
+  expenses: ExpenseAnalysisSummary;
+  daily: DailyAnalysisRecord[];
+  executiveSummary: FinancialExecutiveSummary;
+  rawIncomeRows?: (string | number | boolean | null)[][];
+  rawAllOrderCurrentRows?: (string | number | boolean | null)[][];
+  rawAllOrderPrevRows?: (string | number | boolean | null)[][];
+  rawSettlementRows?: (string | number | boolean | null)[][];
 }
 
 /**
@@ -40,289 +58,657 @@ function calculateAutoWidths(data: (string | number | boolean | null)[][]): { wc
 }
 
 /**
- * Exports complete multi-sheet operational report for Shopee reconciliation
+ * Normalizes period string into safe filename component
  */
-export function exportToExcel({
-  results,
-  summary,
-  reconciliation,
-  duplicates,
-  period,
-}: ExportExcelOptions): { success: boolean; fileName: string; error?: string } {
+function formatFilenamePeriod(period: string): string {
+  const clean = period.replace(/[^a-zA-Z0-9_-]/g, '_').replace(/_+/g, '_');
+  return clean || 'Periode_Berjalan';
+}
+
+/**
+ * Exports complete 12-sheet professional financial and analytics workbook
+ * Compliant with user specification for Laporan_Shopee_Professional / Shopee_Report_[PERIODE].xlsx
+ */
+export function exportToExcel(options: ProfessionalExportOptions): {
+  success: boolean;
+  fileName: string;
+  error?: string;
+} {
   try {
+    const {
+      results,
+      summary,
+      reconciliation,
+      duplicates,
+      period,
+      ledger,
+      orderSummaries,
+      products,
+      top10,
+      expenses,
+      daily,
+      executiveSummary,
+      rawIncomeRows,
+      rawAllOrderCurrentRows,
+      rawAllOrderPrevRows,
+      rawSettlementRows,
+    } = options;
+
     const wb = XLSX.utils.book_new();
 
-    // ==========================================
-    // SHEET 1: Summary
-    // ==========================================
-    const summaryData = [
-      ['LAPORAN INCOME SHOPEE'],
-      ['Periode:', period],
-      ['Tanggal Dibuat:', new Date().toLocaleString('id-ID')],
+    // ==============================================================
+    // 01_EXECUTIVE_SUMMARY
+    // ==============================================================
+    const modeLabel =
+      executiveSummary.mode === 'FINANCIAL_REPORT'
+        ? 'FINANCIAL REPORT (Income + All Order + Settlement Terverifikasi)'
+        : 'SALES REPORT (Income + All Order - Settlement Belum Diunggah)';
+
+    const execSummaryData: (string | number | boolean | null)[][] = [
+      ['SHOPEE PROFESSIONAL FINANCIAL & SALES REPORT'],
+      ['Periode Laporan:', period],
+      ['Mode Laporan:', modeLabel],
+      ['Waktu Export:', new Date().toLocaleString('id-ID')],
       [],
-      ['RINGKASAN MATCHING', 'JUMLAH', 'PERSENTASE / KETERANGAN'],
-      ['Total Data Income SKU', summary.totalIncomeSkuRows, '100.0%'],
-      ['Exact SKU (Prioritas 1)', summary.exactSkuCount, `${summary.exactSkuPercentage.toFixed(1)}%`],
-      ['SKU Induk Fallback (Prioritas 2)', summary.skuIndukFallbackCount, `${summary.skuIndukFallbackPercentage.toFixed(1)}%`],
-      ['Nama Produk Fallback (Prioritas 3)', summary.productNameFallbackCount, `${summary.productNameFallbackPercentage.toFixed(1)}%`],
-      ['Tidak Ditemukan', summary.notFoundCount, `${summary.notFoundPercentage.toFixed(1)}%`],
+      ['1. RINGKASAN EKSEKUTIF KINERJA (KPI KEUANGAN & PENJUALAN)', 'NILAI', 'CATATAN AUDIT'],
+      ['Total Pesanan (Unique Orders)', executiveSummary.totalOrders, 'Dihitung per No. Pesanan unik'],
+      ['Total Ragam SKU Aktif', executiveSummary.totalUniqueSkus, 'Jumlah SKU unik terjual'],
+      ['Total Kuantitas Terjual (Total Qty)', executiveSummary.totalQuantity, 'Total unit produk tervalidasi'],
+      ['Total Pendapatan Kotor (Gross Revenue)', executiveSummary.totalGrossRevenue, formatRupiah(executiveSummary.totalGrossRevenue)],
+      ['Total Diskon & Voucher Penjual', executiveSummary.totalDiscount, formatRupiah(executiveSummary.totalDiscount)],
+      ['Total Beban Biaya Platform (Expense)', executiveSummary.totalExpense, formatRupiah(executiveSummary.totalExpense)],
+      ['Total Pengembalian Dana (Refund)', executiveSummary.totalRefund, formatRupiah(executiveSummary.totalRefund)],
+      [
+        'Pendapatan Bersih Setelah Biaya Platform (Net Revenue)',
+        executiveSummary.netRevenue,
+        formatRupiah(executiveSummary.netRevenue),
+      ],
+      ['Average Order Value (AOV)', Math.round(executiveSummary.averageOrderValue), formatRupiah(executiveSummary.averageOrderValue)],
+      ['Average Revenue per SKU', Math.round(executiveSummary.averageRevenuePerSku), formatRupiah(executiveSummary.averageRevenuePerSku)],
       [],
-      ['TOTAL QTY & PENGHASILAN', 'NILAI', 'FORMAT'],
-      ['Total Qty Pembelian Ditemukan', summary.totalQuantityFound, `${formatNumber(summary.totalQuantityFound)} pcs`],
-      ['Total Penghasilan Shopee', summary.totalIncomeAmount, summary.formattedTotalIncome],
+      ['2. INFORMASI PROFITABILITAS & HPP (COST OF GOODS SOLD)', 'STATUS', 'KETERANGAN'],
+      ['HPP (Harga Pokok Penjualan)', '-', 'Tidak tersedia di laporan seller centre Shopee'],
+      ['Gross Profit (Laba Kotor Akuntansi)', '-', 'HPP tidak diisi, laba kotor akuntansi tidak diestimasi palsu'],
+      ['Gross Margin', '-', 'Tidak dapat dihitung tanpa data HPP akuntansi'],
       [],
-      ['REKONSILIASI HASIL', 'STATUS', 'VERIFIKASI'],
-      ['Status Rekonsiliasi', reconciliation.status === 'SUCCESS' ? '✓ REKONSILIASI SUKSES' : '❌ GAGAL', 'Exact + SKU Induk + Nama Produk + Tidak Ditemukan = Total'],
-      ['Total Baris Income', reconciliation.totalIncomeRows, 'Sesuai sumber Income'],
-      ['Total Baris Hasil', reconciliation.totalMatchingRows, '100% baris diproses'],
+      ['3. KINERJA MATCHING ENGINE', 'JUMLAH BARIS', 'PERSENTASE TERHADAP TOTAL INCOME'],
+      ['Prioritas 1: Exact SKU Match', summary.exactSkuCount, `${summary.exactSkuPercentage.toFixed(1)}%`],
+      ['Prioritas 2: SKU Induk Fallback', summary.skuIndukFallbackCount, `${summary.skuIndukFallbackPercentage.toFixed(1)}%`],
+      ['Prioritas 3: Nama Produk Fallback', summary.productNameFallbackCount, `${summary.productNameFallbackPercentage.toFixed(1)}%`],
+      ['Tidak Ditemukan (Unmatched)', summary.notFoundCount, `${summary.notFoundPercentage.toFixed(1)}%`],
+      ['Tingkat Kecocokan Pesanan (Order Match Rate)', executiveSummary.matchedOrderPercentage, `${executiveSummary.matchedOrderPercentage.toFixed(1)}%`],
       [],
-      ['PEMERIKSAAN DUPLIKAT', 'JUMLAH', 'KETERANGAN'],
-      ['Jumlah Potensi Duplikat', duplicates.length, duplicates.length > 0 ? '⚠ Terdapat kombinasi No. Pesanan + SKU berulang' : 'Tidak ada duplikat'],
+      ['4. STATUS REKONSILIASI KEUANGAN & AUDIT', 'HASIL', 'VERIFIKASI'],
+      [
+        'Status Integritas Data',
+        reconciliation.status === 'SUCCESS' ? '✓ REKONSILIASI BERHASIL (SEIMBANG)' : 'PERLU PEMERIKSAAN',
+        'Exact + SKU Induk + Nama Produk + Not Found == Total Income',
+      ],
+      ['Total Baris Data Income Diproses', reconciliation.totalIncomeRows, '100% baris dipetakan'],
+      ['Potensi Duplikasi Data', duplicates.length > 0 ? `${duplicates.length} pola order` : '0 (Bersih)', 'Pemeriksaan integritas baris'],
     ];
 
-    const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
-    wsSummary['!cols'] = [{ wch: 34 }, { wch: 25 }, { wch: 40 }];
-    XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
+    const wsExec = XLSX.utils.aoa_to_sheet(execSummaryData);
+    wsExec['!cols'] = [{ wch: 45 }, { wch: 25 }, { wch: 55 }];
+    XLSX.utils.book_append_sheet(wb, wsExec, '01_EXECUTIVE_SUMMARY');
 
-    // ==========================================
-    // SHEET 2: Hasil
-    // ==========================================
-    const hasilHeaders = [
-      'No.',
-      'No. Pesanan',
+    // ==============================================================
+    // 02_DETAIL_TRANSAKSI (Normalized Transaction Ledger)
+    // ==============================================================
+    const ledgerHeaders = [
+      'No',
+      'No Pesanan',
+      'Tanggal',
       'SKU',
       'Nama Produk',
-      'Total Penghasilan',
-      'Qty Pembelian',
-      'Status Matching',
-      'Sumber All Order',
+      'Variasi',
+      'Qty',
+      'Harga Satuan',
+      'Pendapatan Kotor',
+      'Diskon',
+      'Biaya Administrasi',
+      'Biaya Pembayaran',
+      'Biaya Layanan',
+      'Biaya Pengiriman',
+      'Biaya Promosi',
+      'Biaya Lainnya',
+      'Refund',
+      'Penyesuaian',
+      'Total Beban',
+      'Pendapatan Bersih',
+      'HPP',
+      'Gross Profit',
+      'Margin',
+      'Match Type',
+      'Match Status',
+      'Source File',
+      'Source Row',
+      'Audit Note',
     ];
 
-    const hasilRows = results.map((item, idx) => {
-      const statusLabel =
-        item.matchStatus === 'EXACT_SKU'
-          ? 'Exact SKU'
-          : item.matchStatus === 'SKU_INDUK_FALLBACK'
-          ? 'SKU Induk Fallback'
-          : item.matchStatus === 'PRODUCT_NAME_FALLBACK'
-          ? 'Nama Produk Fallback'
-          : 'Tidak Ditemukan';
-
-      const sourceLabel =
-        item.sourceMonth === 'current'
-          ? 'All Order Bulan Ini'
-          : item.sourceMonth === 'previous'
-          ? 'All Order Bulan Lalu'
-          : '-';
-
-      return [
-        idx + 1,
-        item.orderNumber,
-        item.incomeSku,
-        item.productName || '-',
-        typeof item.totalIncome === 'number'
-          ? item.totalIncome
-          : formatRupiah(item.totalIncome),
-        item.quantity !== null && item.quantity !== undefined ? item.quantity : '-',
-        statusLabel,
-        sourceLabel,
-      ];
-    });
-
-    const hasilSheetData = [hasilHeaders, ...hasilRows];
-    const wsHasil = XLSX.utils.aoa_to_sheet(hasilSheetData);
-    wsHasil['!cols'] = calculateAutoWidths(hasilSheetData);
-    if (hasilRows.length > 0) {
-      wsHasil['!autofilter'] = { ref: `A1:H${hasilRows.length + 1}` };
-    }
-    // Freeze top row
-    wsHasil['!freeze'] = { xSplit: 0, ySplit: 1 };
-    wsHasil['!views'] = [{ state: 'frozen', ySplit: 1 }];
-    XLSX.utils.book_append_sheet(wb, wsHasil, 'Hasil');
-
-    // ==========================================
-    // SHEET 3: Tidak Cocok
-    // ==========================================
-    const tidakCocokHeaders = [
-      'No.',
-      'No. Pesanan',
-      'SKU',
-      'Nama Produk',
-      'Total Penghasilan',
-      'Qty Pembelian',
-      'Status Matching',
-      'Alasan',
-    ];
-
-    const tidakCocokItems = results.filter((r) => r.matchStatus === 'NOT_FOUND');
-    const tidakCocokRows = tidakCocokItems.map((item, idx) => [
-      idx + 1,
+    const ledgerRows = ledger.map((item) => [
+      item.no,
       item.orderNumber,
-      item.incomeSku,
-      item.productName || '-',
-      typeof item.totalIncome === 'number'
-        ? item.totalIncome
-        : formatRupiah(item.totalIncome),
+      item.orderDate,
+      item.sku,
+      item.productName,
+      item.variation,
+      item.quantity !== null && item.quantity !== undefined ? item.quantity : '-',
+      item.unitPrice !== null && item.unitPrice !== undefined ? Math.round(item.unitPrice) : '-',
+      item.grossRevenue,
+      item.discount,
+      item.adminFee,
+      item.paymentFee,
+      item.serviceFee,
+      item.shippingCost,
+      item.promotionFee,
+      item.otherFee,
+      item.refund,
+      item.adjustment,
+      item.totalExpense,
+      item.netRevenue,
+      '-', // HPP kosong
+      '-', // Gross Profit kosong
+      '-', // Margin kosong
+      item.matchType,
+      item.matchStatus,
+      item.sourceFile,
+      item.sourceRow,
+      item.auditNote,
+    ]);
+
+    // Calculate Ledger Totals
+    const totLedgerQty = ledger.reduce((sum, i) => sum + (i.quantity || 0), 0);
+    const totLedgerGross = ledger.reduce((sum, i) => sum + i.grossRevenue, 0);
+    const totLedgerDiscount = ledger.reduce((sum, i) => sum + i.discount, 0);
+    const totLedgerAdmin = ledger.reduce((sum, i) => sum + i.adminFee, 0);
+    const totLedgerPay = ledger.reduce((sum, i) => sum + i.paymentFee, 0);
+    const totLedgerServ = ledger.reduce((sum, i) => sum + i.serviceFee, 0);
+    const totLedgerShip = ledger.reduce((sum, i) => sum + i.shippingCost, 0);
+    const totLedgerPromo = ledger.reduce((sum, i) => sum + i.promotionFee, 0);
+    const totLedgerOther = ledger.reduce((sum, i) => sum + i.otherFee, 0);
+    const totLedgerRefund = ledger.reduce((sum, i) => sum + i.refund, 0);
+    const totLedgerAdj = ledger.reduce((sum, i) => sum + i.adjustment, 0);
+    const totLedgerExpense = ledger.reduce((sum, i) => sum + i.totalExpense, 0);
+    const totLedgerNet = ledger.reduce((sum, i) => sum + i.netRevenue, 0);
+
+    const ledgerTotalRow = [
+      'TOTAL',
+      '',
+      '',
+      '',
+      '',
+      '',
+      totLedgerQty,
+      '',
+      totLedgerGross,
+      totLedgerDiscount,
+      totLedgerAdmin,
+      totLedgerPay,
+      totLedgerServ,
+      totLedgerShip,
+      totLedgerPromo,
+      totLedgerOther,
+      totLedgerRefund,
+      totLedgerAdj,
+      totLedgerExpense,
+      totLedgerNet,
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      'Total Baris Transaksi Terverifikasi',
+    ];
+
+    const ledgerSheetData = [ledgerHeaders, ...ledgerRows, ledgerTotalRow];
+    const wsLedger = XLSX.utils.aoa_to_sheet(ledgerSheetData);
+    wsLedger['!cols'] = calculateAutoWidths(ledgerSheetData);
+    if (ledgerRows.length > 0) {
+      wsLedger['!autofilter'] = { ref: `A1:AB${ledgerRows.length + 1}` };
+    }
+    wsLedger['!freeze'] = { xSplit: 0, ySplit: 1 };
+    XLSX.utils.book_append_sheet(wb, wsLedger, '02_DETAIL_TRANSAKSI');
+
+    // ==============================================================
+    // 03_ORDER_SUMMARY (1 row per No. Pesanan, No double counting)
+    // ==============================================================
+    const orderHeaders = [
+      'No Pesanan',
+      'Tanggal',
+      'Jumlah SKU',
+      'Total Qty',
+      'Pendapatan',
+      'Diskon',
+      'Total Beban',
+      'Refund',
+      'Pendapatan Bersih',
+      'Margin',
+      'Status Matching',
+      'Verifikasi Settlement',
+    ];
+
+    const orderRows = orderSummaries.map((o) => [
+      o.orderNumber,
+      o.orderDate || '-',
+      o.skuCount,
+      o.totalQuantity,
+      o.grossRevenue,
+      o.discount,
+      o.totalExpense,
+      o.refund,
+      o.netRevenue,
       '-',
-      'Tidak Ditemukan',
-      'SKU tidak ditemukan pada All Order bulan ini maupun bulan sebelumnya.',
+      o.matchStatus,
+      o.settlementVerified ? 'Terverifikasi Settlement' : 'Belum Ada Settlement',
     ]);
 
-    const tidakCocokSheetData = [tidakCocokHeaders, ...tidakCocokRows];
-    const wsTidakCocok = XLSX.utils.aoa_to_sheet(tidakCocokSheetData);
-    wsTidakCocok['!cols'] = calculateAutoWidths(tidakCocokSheetData);
-    if (tidakCocokRows.length > 0) {
-      wsTidakCocok['!autofilter'] = { ref: `A1:H${tidakCocokRows.length + 1}` };
-    }
-    wsTidakCocok['!freeze'] = { xSplit: 0, ySplit: 1 };
-    wsTidakCocok['!views'] = [{ state: 'frozen', ySplit: 1 }];
-    XLSX.utils.book_append_sheet(wb, wsTidakCocok, 'Tidak Cocok');
+    const totOrderQty = orderSummaries.reduce((sum, o) => sum + o.totalQuantity, 0);
+    const totOrderGross = orderSummaries.reduce((sum, o) => sum + o.grossRevenue, 0);
+    const totOrderDiscount = orderSummaries.reduce((sum, o) => sum + o.discount, 0);
+    const totOrderExpense = orderSummaries.reduce((sum, o) => sum + o.totalExpense, 0);
+    const totOrderRefund = orderSummaries.reduce((sum, o) => sum + o.refund, 0);
+    const totOrderNet = orderSummaries.reduce((sum, o) => sum + o.netRevenue, 0);
 
-    // ==========================================
-    // SHEET 4: SKU Induk Fallback
-    // ==========================================
-    const fallbackHeaders = [
-      'No.',
-      'No. Pesanan',
-      'SKU Income',
-      'Nama Produk',
-      'Qty Pembelian',
-      'SKU Induk',
-      'Sumber All Order',
-      'Status Matching',
+    const orderTotalRow = [
+      `TOTAL (${orderSummaries.length} PESANAN)`,
+      '',
+      '',
+      totOrderQty,
+      totOrderGross,
+      totOrderDiscount,
+      totOrderExpense,
+      totOrderRefund,
+      totOrderNet,
+      '',
+      '',
+      'Zero Double-Count Biaya',
     ];
 
-    const fallbackItems = results.filter((r) => r.matchStatus === 'SKU_INDUK_FALLBACK');
-    const fallbackRows = fallbackItems.map((item, idx) => [
-      idx + 1,
-      item.orderNumber,
-      item.incomeSku,
-      item.productName || '-',
-      item.quantity !== null && item.quantity !== undefined ? item.quantity : '-',
-      item.allOrderParentSku || '-',
-      item.sourceMonth === 'current'
-        ? 'All Order Bulan Ini'
-        : item.sourceMonth === 'previous'
-        ? 'All Order Bulan Lalu'
-        : '-',
-      'SKU Induk Fallback',
-    ]);
-
-    const fallbackSheetData = [fallbackHeaders, ...fallbackRows];
-    const wsFallback = XLSX.utils.aoa_to_sheet(fallbackSheetData);
-    wsFallback['!cols'] = calculateAutoWidths(fallbackSheetData);
-    if (fallbackRows.length > 0) {
-      wsFallback['!autofilter'] = { ref: `A1:H${fallbackRows.length + 1}` };
+    const orderSheetData = [orderHeaders, ...orderRows, orderTotalRow];
+    const wsOrder = XLSX.utils.aoa_to_sheet(orderSheetData);
+    wsOrder['!cols'] = calculateAutoWidths(orderSheetData);
+    if (orderRows.length > 0) {
+      wsOrder['!autofilter'] = { ref: `A1:L${orderRows.length + 1}` };
     }
-    wsFallback['!freeze'] = { xSplit: 0, ySplit: 1 };
-    wsFallback['!views'] = [{ state: 'frozen', ySplit: 1 }];
-    XLSX.utils.book_append_sheet(wb, wsFallback, 'SKU Induk Fallback');
+    wsOrder['!freeze'] = { xSplit: 0, ySplit: 1 };
+    XLSX.utils.book_append_sheet(wb, wsOrder, '03_ORDER_SUMMARY');
 
-    // ==========================================
-    // SHEET 5: Nama Produk Fallback
-    // ==========================================
-    const prodFallbackHeaders = [
-      'No.',
-      'No. Pesanan',
-      'SKU Income',
+    // ==============================================================
+    // 04_PRODUCT_ANALYSIS (Grouped by SKU + Nama Produk, Sorted Qty desc)
+    // ==============================================================
+    const prodHeaders = [
+      'No',
+      'SKU',
       'Nama Produk',
-      'Qty Pembelian',
-      'Sumber All Order',
-      'Status Matching',
-      'Keterangan',
+      'Total Qty',
+      'Total Order',
+      'Total Revenue',
+      'Total Expense',
+      'Net Revenue',
+      'Average Selling Price (ASP)',
+      'HPP',
+      'Gross Profit',
+      'Gross Margin',
     ];
 
-    const prodFallbackItems = results.filter(
-      (r) => r.matchStatus === 'PRODUCT_NAME_FALLBACK',
-    );
-    const prodFallbackRows = prodFallbackItems.map((item, idx) => [
+    const prodRows = products.map((p, idx) => [
       idx + 1,
-      item.orderNumber,
-      item.incomeSku,
-      item.productName || '-',
-      item.quantity !== null && item.quantity !== undefined ? item.quantity : '-',
-      item.sourceMonth === 'current'
-        ? 'All Order Bulan Ini'
-        : item.sourceMonth === 'previous'
-        ? 'All Order Bulan Lalu'
-        : '-',
-      'Nama Produk Fallback',
-      'SKU & SKU Induk All Order kosong, berhasil cocok via Nama Produk identik',
+      p.sku,
+      p.productName,
+      p.totalQuantity,
+      p.totalOrder,
+      p.totalRevenue,
+      p.totalExpense,
+      p.netRevenue,
+      Math.round(p.averageSellingPrice),
+      '-',
+      '-',
+      '-',
     ]);
 
-    const prodFallbackSheetData = [prodFallbackHeaders, ...prodFallbackRows];
-    const wsProdFallback = XLSX.utils.aoa_to_sheet(prodFallbackSheetData);
-    wsProdFallback['!cols'] = calculateAutoWidths(prodFallbackSheetData);
-    if (prodFallbackRows.length > 0) {
-      wsProdFallback['!autofilter'] = { ref: `A1:H${prodFallbackRows.length + 1}` };
-    }
-    wsProdFallback['!freeze'] = { xSplit: 0, ySplit: 1 };
-    wsProdFallback['!views'] = [{ state: 'frozen', ySplit: 1 }];
-    XLSX.utils.book_append_sheet(wb, wsProdFallback, 'Nama Produk Fallback');
+    const totProdQty = products.reduce((sum, p) => sum + p.totalQuantity, 0);
+    const totProdRev = products.reduce((sum, p) => sum + p.totalRevenue, 0);
+    const totProdExp = products.reduce((sum, p) => sum + p.totalExpense, 0);
+    const totProdNet = products.reduce((sum, p) => sum + p.netRevenue, 0);
+    const overallAsp = totProdQty > 0 ? Math.round(totProdRev / totProdQty) : 0;
 
-    // ==========================================
-    // SHEET 6: Audit
-    // ==========================================
+    const prodTotalRow = [
+      'TOTAL',
+      '',
+      `${products.length} Ragam Produk`,
+      totProdQty,
+      executiveSummary.totalOrders,
+      totProdRev,
+      totProdExp,
+      totProdNet,
+      overallAsp,
+      '',
+      '',
+      '',
+    ];
+
+    const prodSheetData = [prodHeaders, ...prodRows, prodTotalRow];
+    const wsProd = XLSX.utils.aoa_to_sheet(prodSheetData);
+    wsProd['!cols'] = calculateAutoWidths(prodSheetData);
+    if (prodRows.length > 0) {
+      wsProd['!autofilter'] = { ref: `A1:L${prodRows.length + 1}` };
+    }
+    wsProd['!freeze'] = { xSplit: 0, ySplit: 1 };
+    XLSX.utils.book_append_sheet(wb, wsProd, '04_PRODUCT_ANALYSIS');
+
+    // ==============================================================
+    // 05_TOP_10 (5 Distinct Rankings as per Section 12 & 22)
+    // ==============================================================
+    const top10Data: (string | number | boolean | null)[][] = [
+      ['RANKING PRODUK TERBAIK SHOPEE (TOP 10 ANALYTICS)'],
+      ['Catatan Penting: Ranking terlaris (Qty) dipisahkan secara ketat dari ranking omzet & net revenue.'],
+      [],
+      ['A. TOP 10 PRODUK BERDASARKAN KUANTITAS (QTY TERLARIS)'],
+      ['Peringkat', 'SKU', 'Nama Produk', 'Total Qty', 'Total Order', 'Total Omzet (Revenue)', 'Net Revenue'],
+      ...top10.byQty.map((p, idx) => [
+        `#${idx + 1}`,
+        p.sku,
+        p.productName,
+        p.totalQuantity,
+        p.totalOrder,
+        p.totalRevenue,
+        p.netRevenue,
+      ]),
+      [],
+      ['B. TOP 10 PRODUK BERDASARKAN OMZET (GROSS REVENUE TERTINGGI)'],
+      ['Peringkat', 'SKU', 'Nama Produk', 'Total Omzet', 'Total Qty', 'Total Order', 'Net Revenue'],
+      ...top10.byRevenue.map((p, idx) => [
+        `#${idx + 1}`,
+        p.sku,
+        p.productName,
+        p.totalRevenue,
+        p.totalQuantity,
+        p.totalOrder,
+        p.netRevenue,
+      ]),
+      [],
+      ['C. TOP 10 PRODUK BERDASARKAN PENDAPATAN BERSIH (NET REVENUE)'],
+      ['Peringkat', 'SKU', 'Nama Produk', 'Net Revenue', 'Total Omzet', 'Total Expense', 'Total Qty'],
+      ...top10.byNetRevenue.map((p, idx) => [
+        `#${idx + 1}`,
+        p.sku,
+        p.productName,
+        p.netRevenue,
+        p.totalRevenue,
+        p.totalExpense,
+        p.totalQuantity,
+      ]),
+      [],
+      ['D. TOP 10 PRODUK BERDASARKAN FREKUENSI ORDER'],
+      ['Peringkat', 'SKU', 'Nama Produk', 'Jumlah Order', 'Total Qty', 'Total Omzet'],
+      ...top10.byOrderCount.map((p, idx) => [
+        `#${idx + 1}`,
+        p.sku,
+        p.productName,
+        p.totalOrder,
+        p.totalQuantity,
+        p.totalRevenue,
+      ]),
+      [],
+      ['E. TOP 10 PRODUK BERDASARKAN TOTAL BEBAN BIAYA PLATFORM'],
+      ['Peringkat', 'SKU', 'Nama Produk', 'Total Beban Biaya', 'Total Omzet', 'Rasio Beban/Omzet'],
+      ...top10.byExpense.map((p, idx) => [
+        `#${idx + 1}`,
+        p.sku,
+        p.productName,
+        p.totalExpense,
+        p.totalRevenue,
+        p.totalRevenue > 0 ? `${((p.totalExpense / p.totalRevenue) * 100).toFixed(1)}%` : '0%',
+      ]),
+    ];
+
+    const wsTop10 = XLSX.utils.aoa_to_sheet(top10Data);
+    wsTop10['!cols'] = [{ wch: 12 }, { wch: 22 }, { wch: 45 }, { wch: 18 }, { wch: 18 }, { wch: 22 }, { wch: 22 }];
+    XLSX.utils.book_append_sheet(wb, wsTop10, '05_TOP_10');
+
+    // ==============================================================
+    // 06_EXPENSE_ANALYSIS (Fee breakdown & % of Gross Revenue)
+    // ==============================================================
+    const expenseData: (string | number | boolean | null)[][] = [
+      ['ANALISIS STRUKTUR BIAYA PLATFORM SHOPEE'],
+      ['Status Settlement:', expenses.settlementAvailable ? 'Aktual dari Settlement' : 'Settlement Tidak Diunggah (Sales Report Mode)'],
+      ['Total Pendapatan Kotor (Gross Revenue):', executiveSummary.totalGrossRevenue],
+      [],
+      ['Nama Komponen Biaya', 'Kategori', 'Total Jumlah (Rp)', '% terhadap Gross Revenue', 'Catatan Kebijakan Finansial'],
+    ];
+
+    if (expenses.items.length > 0) {
+      for (const item of expenses.items) {
+        expenseData.push([
+          item.feeName,
+          item.category,
+          item.amount,
+          `${item.percentageOfGross.toFixed(2)}%`,
+          item.note || '-',
+        ]);
+      }
+      expenseData.push([]);
+      expenseData.push([
+        'TOTAL BEBAN BIAYA PLATFORM',
+        'Semua Kategori',
+        expenses.totalExpense,
+        `${expenses.percentageOfGross.toFixed(2)}%`,
+        'Total potongan resmi biaya seller',
+      ]);
+    } else {
+      expenseData.push([
+        'File Settlement belum diunggah',
+        '-',
+        0,
+        '0.00%',
+        'Biaya per transaksi tidak diestimasi palsu (Sesuai Aturan Finansial Section 3 & 25)',
+      ]);
+    }
+
+    const wsExpense = XLSX.utils.aoa_to_sheet(expenseData);
+    wsExpense['!cols'] = [{ wch: 38 }, { wch: 25 }, { wch: 22 }, { wch: 25 }, { wch: 55 }];
+    XLSX.utils.book_append_sheet(wb, wsExpense, '06_EXPENSE_ANALYSIS');
+
+    // ==============================================================
+    // 07_DAILY_ANALYSIS (Grouped by Date with AOV and Totals)
+    // ==============================================================
+    const dailyHeaders = [
+      'Tanggal',
+      'Jumlah Order',
+      'Total Qty',
+      'Gross Revenue',
+      'Total Expense',
+      'Net Revenue',
+      'Average Order Value (AOV)',
+    ];
+
+    const dailyRows = daily.map((d) => [
+      d.date,
+      d.orderCount,
+      d.totalQuantity,
+      d.grossRevenue,
+      d.totalExpense,
+      d.netRevenue,
+      Math.round(d.averageOrderValue),
+    ]);
+
+    const totDailyOrders = daily.reduce((sum, d) => sum + d.orderCount, 0);
+    const totDailyQty = daily.reduce((sum, d) => sum + d.totalQuantity, 0);
+    const totDailyGross = daily.reduce((sum, d) => sum + d.grossRevenue, 0);
+    const totDailyExp = daily.reduce((sum, d) => sum + d.totalExpense, 0);
+    const totDailyNet = daily.reduce((sum, d) => sum + d.netRevenue, 0);
+    const avgDailyAov = totDailyOrders > 0 ? Math.round(totDailyGross / totDailyOrders) : 0;
+
+    const dailyTotalRow = [
+      'TOTAL PERIODE',
+      totDailyOrders,
+      totDailyQty,
+      totDailyGross,
+      totDailyExp,
+      totDailyNet,
+      avgDailyAov,
+    ];
+
+    const dailySheetData = [dailyHeaders, ...dailyRows, dailyTotalRow];
+    const wsDaily = XLSX.utils.aoa_to_sheet(dailySheetData);
+    wsDaily['!cols'] = calculateAutoWidths(dailySheetData);
+    if (dailyRows.length > 0) {
+      wsDaily['!autofilter'] = { ref: `A1:G${dailyRows.length + 1}` };
+    }
+    wsDaily['!freeze'] = { xSplit: 0, ySplit: 1 };
+    XLSX.utils.book_append_sheet(wb, wsDaily, '07_DAILY_ANALYSIS');
+
+    // ==============================================================
+    // 08_MATCHING_AUDIT (Audit Trail & 4-Category Reconciliation)
+    // ==============================================================
     const auditData: (string | number | boolean | null)[][] = [
       ['AUDIT REPORT & DATA RECONCILIATION'],
-      ['Periode Laporan:', period],
-      ['Generated At:', new Date().toLocaleString('id-ID')],
+      ['Waktu Audit:', new Date().toLocaleString('id-ID')],
       [],
-      ['1. MATCHING SUMMARY', 'JUMLAH BARIS', 'PERSENTASE'],
-      ['Exact SKU (No. Pesanan + SKU)', summary.exactSkuCount, `${summary.exactSkuPercentage.toFixed(1)}%`],
-      ['SKU Induk Fallback (No. Pesanan + SKU Induk)', summary.skuIndukFallbackCount, `${summary.skuIndukFallbackPercentage.toFixed(1)}%`],
-      ['Nama Produk Fallback (No. Pesanan + Nama Produk)', summary.productNameFallbackCount, `${summary.productNameFallbackPercentage.toFixed(1)}%`],
-      ['Tidak Ditemukan', summary.notFoundCount, `${summary.notFoundPercentage.toFixed(1)}%`],
-      ['Total Data Income SKU', summary.totalIncomeSkuRows, '100%'],
+      ['1. REKONSILIASI HASIL MATCHING', 'JUMLAH BARIS', 'PERSENTASE TERHADAP TOTAL'],
+      ['Prioritas 1: Exact SKU (No. Pesanan + Nomor Referensi SKU)', summary.exactSkuCount, `${summary.exactSkuPercentage.toFixed(1)}%`],
+      ['Prioritas 2: SKU Induk Fallback (No. Pesanan + SKU Induk)', summary.skuIndukFallbackCount, `${summary.skuIndukFallbackPercentage.toFixed(1)}%`],
+      ['Prioritas 3: Nama Produk Fallback (No. Pesanan + Nama Produk)', summary.productNameFallbackCount, `${summary.productNameFallbackPercentage.toFixed(1)}%`],
+      ['Status 4: Tidak Ditemukan di All Order (Unmatched)', summary.notFoundCount, `${summary.notFoundPercentage.toFixed(1)}%`],
+      ['Total Baris Data Income Diproses', summary.totalIncomeSkuRows, '100%'],
       [],
-      ['2. DUPLICATE CHECK', 'JUMLAH POTENSI DUPLIKAT', 'KETERANGAN'],
-      ['Kombinasi No. Pesanan + SKU berulang', duplicates.length, duplicates.length > 0 ? 'Terdapat potensi duplikat untuk verifikasi manual' : 'Nihil'],
+      ['2. FORMULA VALIDASI KESETARAAN MATEMATIS', 'NILAI', 'STATUS VERIFIKASI'],
+      ['Jumlah Kategori (Exact + P2 + P3 + Not Found)', reconciliation.sumCategories, reconciliation.isCountBalanced ? '✓ SEIMBANG 100%' : '❌ TIDAK SEIMBANG'],
+      ['Total Baris Masukan Income', reconciliation.totalIncomeRows, 'Sesuai File Sumber'],
+      ['Selisih Baris', reconciliation.totalIncomeRows - reconciliation.sumCategories, 'Harus 0'],
+      [],
+      ['3. PEMERIKSAAN DUPLIKASI DATA', 'JUMLAH POLA', 'KETERANGAN'],
+      ['Pola Duplikat (Order + SKU Identik)', duplicates.length, duplicates.length === 0 ? 'Bersih (Tidak Ada Duplikasi)' : 'Periksa Detail di Bawah'],
     ];
 
     if (duplicates.length > 0) {
-      auditData.push(['No. Pesanan', 'SKU', 'Frekuensi Muncul', 'Nomor Baris di Laporan']);
-      duplicates.forEach((d) => {
-        auditData.push([d.orderNumber, d.sku, d.count, d.rowIndices.join(', ')]);
-      });
+      auditData.push([]);
+      auditData.push(['DAFTAR POLA DUPLIKAT TERDETEKSI']);
+      auditData.push(['No. Pesanan', 'SKU', 'Frekuensi Muncul', 'Baris ke-']);
+      for (const dup of duplicates.slice(0, 100)) {
+        auditData.push([dup.orderNumber, dup.sku, dup.count, dup.rowIndices.join(', ')]);
+      }
     }
 
-    auditData.push([]);
-    auditData.push(['3. RECONCILIATION', 'NILAI', 'STATUS']);
-    auditData.push(['Total Baris Income SKU', reconciliation.totalIncomeRows, 'Terdaftar di Income']);
-    auditData.push(['Total Baris Hasil Matching', reconciliation.totalMatchingRows, 'Diproses Mesin Matching']);
-    auditData.push(['Total Exact Match', reconciliation.exactCount, 'Match Priority 1']);
-    auditData.push(['Total SKU Induk Fallback', reconciliation.fallbackCount, 'Match Priority 2']);
-    auditData.push(['Total Nama Produk Fallback', reconciliation.productNameFallbackCount, 'Match Priority 3']);
-    auditData.push(['Total Tidak Ditemukan', reconciliation.notFoundCount, 'Priority 4']);
-    auditData.push([
-      'Status Rekonsiliasi (Exact + Fallback1 + Fallback2 + Not Found == Total)',
-      reconciliation.sumCategories,
-      reconciliation.status === 'SUCCESS' ? '✓ REKONSILIASI BERHASIL (SEIMBANG)' : '❌ GAGAL',
+    const wsAudit = XLSX.utils.aoa_to_sheet(auditData);
+    wsAudit['!cols'] = [{ wch: 50 }, { wch: 25 }, { wch: 45 }, { wch: 30 }];
+    XLSX.utils.book_append_sheet(wb, wsAudit, '08_MATCHING_AUDIT');
+
+    // ==============================================================
+    // 09_UNMATCHED (Section 16: All transactions that failed matching)
+    // ==============================================================
+    const unmatchedHeaders = [
+      'No',
+      'No Pesanan',
+      'SKU Income',
+      'Nama Produk Income',
+      'Total Penghasilan',
+      'Qty',
+      'Status Matching',
+      'Alasan & Catatan Audit',
+    ];
+
+    const unmatchedItems = results.filter((r) => r.matchStatus === 'NOT_FOUND');
+    const unmatchedRows = unmatchedItems.map((item, idx) => [
+      idx + 1,
+      item.orderNumber,
+      item.incomeSku,
+      item.productName,
+      item.incomeAmount !== undefined ? item.incomeAmount : item.totalIncome,
+      '-',
+      'Tidak Ditemukan',
+      'No. Pesanan / SKU / Nama Produk tidak terdaftar pada All Order Bulan Ini maupun Bulan Lalu',
     ]);
 
-    const wsAudit = XLSX.utils.aoa_to_sheet(auditData);
-    wsAudit['!cols'] = [{ wch: 35 }, { wch: 25 }, { wch: 35 }, { wch: 30 }];
-    XLSX.utils.book_append_sheet(wb, wsAudit, 'Audit');
+    const unmatchedSheetData = [unmatchedHeaders, ...unmatchedRows];
+    const wsUnmatched = XLSX.utils.aoa_to_sheet(unmatchedSheetData);
+    wsUnmatched['!cols'] = calculateAutoWidths(unmatchedSheetData);
+    if (unmatchedRows.length > 0) {
+      wsUnmatched['!autofilter'] = { ref: `A1:H${unmatchedRows.length + 1}` };
+    }
+    wsUnmatched['!freeze'] = { xSplit: 0, ySplit: 1 };
+    XLSX.utils.book_append_sheet(wb, wsUnmatched, '09_UNMATCHED');
 
-    // ==========================================
-    // Generate clean filename
-    // Format: Laporan_Income_Shopee_[PERIODE].xlsx
-    // Example: Laporan_Income_Shopee_September_2026.xlsx
-    // ==========================================
-    const sanitizedPeriod = period.replace(/[^a-zA-Z0-9_-]/g, '_');
-    const fileName = `Laporan_Income_Shopee_${sanitizedPeriod}.xlsx`;
+    // ==============================================================
+    // 10_SOURCE_INCOME (Traceability: Raw Income sample / rows)
+    // ==============================================================
+    let incomeSheetData: (string | number | boolean | null)[][] = [];
+    if (rawIncomeRows && rawIncomeRows.length > 0) {
+      incomeSheetData = rawIncomeRows.slice(0, 500); // cap max 500 rows for size efficiency
+    } else {
+      incomeSheetData = [
+        ['DOKUMENTASI SUMBER DATA INCOME'],
+        ['Total Baris Diproses:', results.length],
+        ['Status:', 'Data Income terekonsiliasi penuh pada Sheet 02_DETAIL_TRANSAKSI.'],
+      ];
+    }
+    const wsSrcIncome = XLSX.utils.aoa_to_sheet(incomeSheetData);
+    wsSrcIncome['!cols'] = calculateAutoWidths(incomeSheetData);
+    XLSX.utils.book_append_sheet(wb, wsSrcIncome, '10_SOURCE_INCOME');
 
-    // Trigger file download in browser
-    XLSX.writeFile(wb, fileName);
+    // ==============================================================
+    // 11_SOURCE_ALL_ORDER (Traceability: Raw All Order rows)
+    // ==============================================================
+    let orderSrcData: (string | number | boolean | null)[][] = [];
+    if (rawAllOrderCurrentRows && rawAllOrderCurrentRows.length > 0) {
+      orderSrcData = rawAllOrderCurrentRows.slice(0, 500);
+    } else {
+      orderSrcData = [
+        ['DOKUMENTASI SUMBER DATA ALL ORDER'],
+        ['Keterangan:', 'Laporan pesanan bulan berjalan & bulan sebelumnya tervalidasi.'],
+      ];
+    }
+    const wsSrcOrder = XLSX.utils.aoa_to_sheet(orderSrcData);
+    wsSrcOrder['!cols'] = calculateAutoWidths(orderSrcData);
+    XLSX.utils.book_append_sheet(wb, wsSrcOrder, '11_SOURCE_ALL_ORDER');
 
-    return { success: true, fileName };
-  } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : String(err);
-    console.error('Export Excel failed:', err);
+    // ==============================================================
+    // 12_SOURCE_SETTLEMENT (Traceability: Settlement rows or notice)
+    // ==============================================================
+    let settlementSheetData: (string | number | boolean | null)[][] = [];
+    if (rawSettlementRows && rawSettlementRows.length > 0) {
+      settlementSheetData = rawSettlementRows.slice(0, 500);
+    } else {
+      settlementSheetData = [
+        ['DOKUMENTASI SUMBER DATA SETTLEMENT'],
+        ['Status File:', expenses.settlementAvailable ? 'Aktif' : 'Tidak Diunggah'],
+        [
+          'Catatan:',
+          expenses.settlementAvailable
+            ? 'Rincian pelepasan dana tervalidasi pada Sheet 06_EXPENSE_ANALYSIS.'
+            : 'Laporan diekspor dalam Mode 1: Sales Report. Biaya per transaksi tidak diestimasi sesuai Aturan Finansial Section 3 & 25.',
+        ],
+      ];
+    }
+    const wsSrcSettlement = XLSX.utils.aoa_to_sheet(settlementSheetData);
+    wsSrcSettlement['!cols'] = calculateAutoWidths(settlementSheetData);
+    XLSX.utils.book_append_sheet(wb, wsSrcSettlement, '12_SOURCE_SETTLEMENT');
+
+    // ==============================================================
+    // WRITE FILE (Section 27: Shopee_Report_[PERIODE].xlsx)
+    // ==============================================================
+    const safePeriod = formatFilenamePeriod(period);
+    const fileName = `Shopee_Report_${safePeriod}.xlsx`;
+
+    XLSX.writeFile(wb, fileName, {
+      bookType: 'xlsx',
+      type: 'binary',
+      compression: true,
+    });
+
+    return {
+      success: true,
+      fileName,
+    };
+  } catch (error) {
+    console.error('Error exporting professional Excel report:', error);
     return {
       success: false,
-      fileName: '',
-      error: `Export Excel gagal: ${errorMsg}. Data aplikasi tetap aman. Silakan coba kembali.`,
+      fileName: 'Laporan_Shopee_Professional.xlsx',
+      error: error instanceof Error ? error.message : 'Gagal menghasilkan file Excel.',
     };
   }
 }

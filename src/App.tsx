@@ -15,11 +15,13 @@ import {
   processUploadedFile,
   REQUIRED_INCOME_HEADERS,
   REQUIRED_ALL_ORDER_HEADERS,
+  REQUIRED_SETTLEMENT_HEADERS,
 } from './utils/excelParser';
 import {
   createSampleIncomeFile,
   createSampleAllOrderCurrentFile,
   createSampleAllOrderPreviousFile,
+  createSampleSettlementFile,
 } from './utils/sampleData';
 import { runMatchingEngine } from './utils/matchingEngine';
 import { MatchedOrderItem, MatchingSummary, MatchStatus } from './types/matchingTypes';
@@ -46,11 +48,13 @@ export default function App() {
   const [incomeFile, setIncomeFile] = useState<UploadedFile | null>(null);
   const [allOrderCurrentFile, setAllOrderCurrentFile] = useState<UploadedFile | null>(null);
   const [allOrderPrevFile, setAllOrderPrevFile] = useState<UploadedFile | null>(null);
+  const [settlementFile, setSettlementFile] = useState<UploadedFile | null>(null);
 
   const [rawFiles, setRawFiles] = useState<{
     income?: File;
     all_order_current?: File;
     all_order_previous?: File;
+    settlement?: File;
   }>({});
 
   const [previewFile, setPreviewFile] = useState<UploadedFile | null>(null);
@@ -104,10 +108,13 @@ export default function App() {
       if (category === 'income') setIncomeFile(parsed);
       else if (category === 'all_order_current') setAllOrderCurrentFile(parsed);
       else if (category === 'all_order_previous') setAllOrderPrevFile(parsed);
+      else if (category === 'settlement') setSettlementFile(parsed);
 
-      // Invalidate existing stage 2 results if a file changes
-      setStage2Results(null);
-      setStage2Summary(null);
+      // Invalidate existing stage 2 results if matching files change
+      if (category !== 'settlement') {
+        setStage2Results(null);
+        setStage2Summary(null);
+      }
     } catch (err) {
       const errorFile: UploadedFile = {
         category,
@@ -124,6 +131,7 @@ export default function App() {
       if (category === 'income') setIncomeFile(errorFile);
       else if (category === 'all_order_current') setAllOrderCurrentFile(errorFile);
       else if (category === 'all_order_previous') setAllOrderPrevFile(errorFile);
+      else if (category === 'settlement') setSettlementFile(errorFile);
     }
   };
 
@@ -137,9 +145,12 @@ export default function App() {
       if (category === 'income') setIncomeFile(parsed);
       else if (category === 'all_order_current') setAllOrderCurrentFile(parsed);
       else if (category === 'all_order_previous') setAllOrderPrevFile(parsed);
+      else if (category === 'settlement') setSettlementFile(parsed);
 
-      setStage2Results(null);
-      setStage2Summary(null);
+      if (category !== 'settlement') {
+        setStage2Results(null);
+        setStage2Summary(null);
+      }
     } catch (err) {
       console.error('Error changing sheet:', err);
     }
@@ -156,11 +167,14 @@ export default function App() {
     if (category === 'income') setIncomeFile(null);
     else if (category === 'all_order_current') setAllOrderCurrentFile(null);
     else if (category === 'all_order_previous') setAllOrderPrevFile(null);
+    else if (category === 'settlement') setSettlementFile(null);
 
-    setStage2Results(null);
-    setStage2Summary(null);
-    if (currentStage !== 'stage1') {
-      setCurrentStage('stage1');
+    if (category !== 'settlement') {
+      setStage2Results(null);
+      setStage2Summary(null);
+      if (currentStage !== 'stage1') {
+        setCurrentStage('stage1');
+      }
     }
   };
 
@@ -169,6 +183,7 @@ export default function App() {
     setIncomeFile(null);
     setAllOrderCurrentFile(null);
     setAllOrderPrevFile(null);
+    setSettlementFile(null);
     setRawFiles({});
     setStage2Results(null);
     setStage2Summary(null);
@@ -180,10 +195,12 @@ export default function App() {
     const sampleIncome = createSampleIncomeFile();
     const sampleCurrent = createSampleAllOrderCurrentFile();
     const samplePrev = createSampleAllOrderPreviousFile();
+    const sampleSettlement = createSampleSettlementFile();
 
     await handleFileUpload(sampleIncome, 'income');
     await handleFileUpload(sampleCurrent, 'all_order_current');
     await handleFileUpload(samplePrev, 'all_order_previous');
+    await handleFileUpload(sampleSettlement, 'settlement');
   };
 
   // Run Stage 2 Matching Engine
@@ -273,24 +290,24 @@ export default function App() {
               </div>
             </div>
 
-            {/* 3 Upload Cards Grid */}
+            {/* Upload Cards Grid */}
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between flex-wrap gap-2">
                 <h3 className="font-bold text-stone-800 text-sm uppercase tracking-wider">
-                  3 Berkas Laporan Shopee yang Dibutuhkan
+                  Berkas Laporan Shopee (3 Berkas Utama + 1 Settlement Opsional)
                 </h3>
                 <span className="text-xs text-stone-500">
                   Format: <strong className="text-stone-700">.XLSX</strong>, <strong>.XLS</strong>, <strong>.CSV</strong>
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
                 {/* Card 1: Income Shopee Sudah Dilepas */}
                 <FileUploadCard
                   category="income"
                   cardNumber={1}
                   title="INCOME SUDAH DILEPAS"
-                  description="Upload laporan Income Shopee yang sudah dilepas."
+                  description="Wajib: Laporan Income Shopee pelepasan dana penjualan."
                   requiredColumnsNotice={REQUIRED_INCOME_HEADERS}
                   file={incomeFile}
                   onFileUpload={handleFileUpload}
@@ -303,7 +320,7 @@ export default function App() {
                   category="all_order_current"
                   cardNumber={2}
                   title="ALL ORDER BULAN INI"
-                  description="Upload file All Order untuk bulan berjalan."
+                  description="Wajib: File All Order pesanan bulan berjalan untuk kuantitas."
                   requiredColumnsNotice={REQUIRED_ALL_ORDER_HEADERS}
                   file={allOrderCurrentFile}
                   onFileUpload={handleFileUpload}
@@ -315,10 +332,23 @@ export default function App() {
                 <FileUploadCard
                   category="all_order_previous"
                   cardNumber={3}
-                  title="ALL ORDER BULAN SEBELUMNYA"
-                  description="Upload file All Order untuk bulan sebelumnya."
+                  title="ALL ORDER BULAN LALU"
+                  description="Wajib: File All Order pesanan bulan sebelumnya."
                   requiredColumnsNotice={REQUIRED_ALL_ORDER_HEADERS}
                   file={allOrderPrevFile}
+                  onFileUpload={handleFileUpload}
+                  onRemoveFile={handleRemoveFile}
+                  onPreview={(f) => setPreviewFile(f)}
+                />
+
+                {/* Card 4: Settlement / Pelepasan Dana (Opsional) */}
+                <FileUploadCard
+                  category="settlement"
+                  cardNumber={4}
+                  title="SETTLEMENT (PELEPASAN DANA)"
+                  description="Opsional: Aktifkan Mode Financial Report & potongan biaya aktual."
+                  requiredColumnsNotice={REQUIRED_SETTLEMENT_HEADERS}
+                  file={settlementFile}
                   onFileUpload={handleFileUpload}
                   onRemoveFile={handleRemoveFile}
                   onPreview={(f) => setPreviewFile(f)}
@@ -339,7 +369,7 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
                 <FileInfoPanel
                   title="Income Sudah Dilepas"
                   categoryLabel="File 1: Income"
@@ -360,6 +390,13 @@ export default function App() {
                   file={allOrderPrevFile}
                   onPreview={(f) => setPreviewFile(f)}
                   onSheetChange={(sheet) => handleSheetChange(sheet, 'all_order_previous')}
+                />
+                <FileInfoPanel
+                  title="Settlement Pelepasan Dana"
+                  categoryLabel="File 4: Settlement"
+                  file={settlementFile}
+                  onPreview={(f) => setPreviewFile(f)}
+                  onSheetChange={(sheet) => handleSheetChange(sheet, 'settlement')}
                 />
               </div>
             </div>
@@ -463,6 +500,11 @@ export default function App() {
             period={reportPeriod}
             onBackToMatching={() => setCurrentStage('stage2')}
             onSelectRow={(item) => setSelectedDetailItem(item)}
+            settlementFile={settlementFile}
+            rawIncomeRows={incomeFile?.rawRows || null}
+            rawAllOrderCurrentRows={allOrderCurrentFile?.rawRows || null}
+            rawAllOrderPrevRows={allOrderPrevFile?.rawRows || null}
+            rawSettlementRows={settlementFile?.rawRows || null}
           />
         )}
       </main>

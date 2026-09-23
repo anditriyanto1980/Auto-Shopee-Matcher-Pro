@@ -20,6 +20,11 @@ export interface MatchedOrderItem {
   incomeSku: string;
   productName: string;
   totalIncome: string | number;
+  incomeAmount?: number;
+  orderDate?: string;
+  variation?: string;
+  allOrderProductName?: string;
+  allOrderVariation?: string;
   quantity: number | null; // null if NOT_FOUND
   matchStatus: MatchStatus;
   sourceFile: string | null;

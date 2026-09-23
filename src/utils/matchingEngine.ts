@@ -34,6 +34,17 @@ export function parseQuantity(val: unknown): number {
   return isNaN(parsed) ? 0 : parsed;
 }
 
+/**
+ * Safely parse numeric amount / currency from string or number
+ */
+export function parseNumber(val: unknown): number {
+  if (val === null || val === undefined) return 0;
+  if (typeof val === 'number') return isNaN(val) ? 0 : val;
+  const str = String(val).trim().replace(/[^0-9.,-]/g, '').replace(/,/g, '.');
+  const num = parseFloat(str);
+  return isNaN(num) ? 0 : num;
+}
+
 interface InternalOrderRow {
   sourceMonth: 'current' | 'previous';
   sourceFileName: string;
@@ -42,6 +53,7 @@ interface InternalOrderRow {
   sku: string;
   parentSku: string;
   productName: string;
+  variation?: string;
   quantity: number;
   normalizedOrder: string;
   normalizedSku: string;
@@ -95,6 +107,7 @@ function buildOrderIndex(
   const skuCol = normHeaders.indexOf('nomor referensi sku');
   const parentSkuCol = normHeaders.indexOf('sku induk');
   const productNameCol = normHeaders.indexOf('nama produk');
+  const variationCol = normHeaders.indexOf('nama variasi');
   const qtyCol = normHeaders.indexOf('jumlah');
 
   if (orderCol === -1 || qtyCol === -1) {
@@ -109,6 +122,7 @@ function buildOrderIndex(
     const rawSku = skuCol !== -1 ? row[skuCol] : '';
     const rawParentSku = parentSkuCol !== -1 ? row[parentSkuCol] : '';
     const rawProductName = productNameCol !== -1 ? row[productNameCol] : '';
+    const rawVariation = variationCol !== -1 ? row[variationCol] : '';
     const rawQty = row[qtyCol];
 
     const normalizedOrder = normalizeKey(rawOrder);
@@ -127,6 +141,7 @@ function buildOrderIndex(
       sku: String(rawSku || '').trim(),
       parentSku: String(rawParentSku || '').trim(),
       productName: String(rawProductName || '').trim(),
+      variation: rawVariation ? String(rawVariation).trim() : undefined,
       quantity,
       normalizedOrder,
       normalizedSku,
@@ -207,6 +222,8 @@ export function runMatchingEngine(
   const skuCol = normIncomeHeaders.indexOf('id produk');
   const productNameCol = normIncomeHeaders.indexOf('nama produk');
   const incomeCol = normIncomeHeaders.indexOf('total penghasilan');
+  const dateCol = normIncomeHeaders.findIndex((h) => h.includes('waktu') || h.includes('tanggal'));
+  const variationCol = normIncomeHeaders.indexOf('nama variasi');
 
   // Check if there are rows where "Lihat berdasarkan" = "sku"
   let hasSkuFilterRows = false;
@@ -368,6 +385,11 @@ export function runMatchingEngine(
             ? rawTotalIncome
             : String(rawTotalIncome)
           : '',
+      incomeAmount: parseNumber(rawTotalIncome),
+      orderDate: dateCol !== -1 && row[dateCol] ? String(row[dateCol]).trim() : undefined,
+      variation: variationCol !== -1 && row[variationCol] ? String(row[variationCol]).trim() : undefined,
+      allOrderProductName: matchedRows.length > 0 ? matchedRows[0].productName : undefined,
+      allOrderVariation: matchedRows.length > 0 ? matchedRows[0].variation : undefined,
       quantity,
       matchStatus,
       sourceFile,

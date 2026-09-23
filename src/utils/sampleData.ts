@@ -94,6 +94,19 @@ export function createSampleIncomeFile(): File {
       150000,
       'Selesai',
     ],
+    // Priority 3 Fallback case: All Order SKU & SKU Induk are empty, matched via Nama Produk
+    [
+      'Sku',
+      '260906FALLBACKPROD',
+      '2026-09-05 11:10:00',
+      'TB-KANVAS-BW',
+      'Totebag Kanvas Premium Resleting',
+      'Broken White',
+      65000,
+      5000,
+      120000,
+      'Selesai',
+    ],
     // Not found case: SKU not in all order files
     [
       'Sku',
@@ -220,6 +233,23 @@ export function createSampleAllOrderCurrentFile(): File {
       1,
       45000,
     ],
+    // Priority 3 Fallback demonstration: SKU & SKU Induk are empty, matched via Nama Produk
+    [
+      '260906FALLBACKPROD',
+      'Selesai',
+      '',
+      '',
+      'SPXID0481928423',
+      'SPX Standard',
+      '',
+      'Totebag Kanvas Premium Resleting',
+      '',
+      'Broken White',
+      65000,
+      60000,
+      2,
+      120000,
+    ],
   ];
 
   const ws = XLSX.utils.aoa_to_sheet(wsData);
@@ -312,3 +342,119 @@ export function createSampleAllOrderPreviousFile(): File {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   });
 }
+
+/**
+ * Creates a sample Settlement (Rincian Pelepasan Dana) file as an XLSX File object
+ */
+export function createSampleSettlementFile(): File {
+  const wsData = [
+    [
+      'No. Pesanan',
+      'Waktu Pesanan Selesai',
+      'Harga Asli Produk',
+      'Total Diskon Produk',
+      'Biaya Administrasi',
+      'Biaya Layanan',
+      'Biaya Pembayaran',
+      'Biaya Pengiriman',
+      'Biaya Promosi',
+      'Pengembalian Dana',
+      'Penyesuaian',
+      'Total Penghasilan',
+    ],
+    [
+      '260901ABCD1234',
+      '2026-09-02 18:30:10',
+      129000,
+      15000,
+      4560,
+      3420,
+      1140,
+      0,
+      0,
+      0,
+      0,
+      104880,
+    ],
+    [
+      '260902EFGH5678',
+      '2026-09-04 12:15:45',
+      165000,
+      20000,
+      5800,
+      4350,
+      1450,
+      0,
+      0,
+      0,
+      0,
+      133400,
+    ],
+    [
+      '260903IJKL9012',
+      '2026-09-05 09:40:22',
+      110000,
+      10000,
+      4000,
+      3000,
+      1000,
+      0,
+      0,
+      0,
+      0,
+      92000,
+    ],
+    [
+      '260904MNOP3456',
+      '2026-09-06 14:55:00',
+      189000,
+      25000,
+      6560,
+      4920,
+      1640,
+      0,
+      0,
+      0,
+      0,
+      150880,
+    ],
+    [
+      '260906FALLBACKPROD',
+      '2026-09-07 16:10:30',
+      130000,
+      10000,
+      4800,
+      3600,
+      1200,
+      0,
+      0,
+      0,
+      0,
+      110400,
+    ],
+    [
+      '260830PREV3333',
+      '2026-09-01 11:00:00',
+      165000,
+      15000,
+      6000,
+      4500,
+      1500,
+      0,
+      0,
+      0,
+      0,
+      138000,
+    ],
+  ];
+
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Settlement');
+
+  const u8 = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  return new File([u8], 'Settlement.Rincian_Pelepasan.202609.xlsx', {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+}
+
