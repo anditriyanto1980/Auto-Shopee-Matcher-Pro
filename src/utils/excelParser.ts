@@ -5,7 +5,9 @@ import {
   DetectedColumn,
   FileValidationResult,
   UploadedFile,
+  IncomeSummaryData,
 } from '../types/fileTypes';
+import { isShopeeIncomeSummarySheet, parseIncomeSummarySheet } from './incomeSummaryParser';
 
 export const REQUIRED_INCOME_HEADERS = [
   'Lihat berdasarkan',
@@ -533,8 +535,23 @@ export async function processUploadedFile(
 
   // Step 5: Validate sheet according to category
   let validationResult: FileValidationResult & { _rawData?: (string | number | boolean | null)[][]; _headerRowIndex?: number };
+  let incomeSummary: IncomeSummaryData | null = null;
+
   if (category === 'income') {
     validationResult = validateIncomeSheet(targetSheet, targetSheetName);
+
+    // Also look for a Summary sheet in the workbook to capture official settlement totals
+    for (const sName of sheetNames) {
+      const s = workbook.Sheets[sName];
+      const lower = sName.toLowerCase();
+      if (lower.includes('summary') || lower.includes('ringkasan') || isShopeeIncomeSummarySheet(s)) {
+        const parsed = parseIncomeSummarySheet(s);
+        if (parsed) {
+          incomeSummary = parsed;
+          break;
+        }
+      }
+    }
   } else if (category === 'settlement') {
     validationResult = validateSettlementSheet(targetSheet, targetSheetName);
   } else {
@@ -544,6 +561,7 @@ export async function processUploadedFile(
   uploadedFile.validation = validationResult;
   uploadedFile.rawRows = validationResult._rawData;
   uploadedFile.headerRowIndex = validationResult._headerRowIndex;
+  uploadedFile.incomeSummary = incomeSummary;
   uploadedFile.status = validationResult.valid ? 'valid' : 'invalid';
 
   return uploadedFile;

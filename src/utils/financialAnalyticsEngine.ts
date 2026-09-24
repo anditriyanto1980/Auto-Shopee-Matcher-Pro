@@ -5,6 +5,7 @@ import {
   ProductAnalysisRecord,
   Top10Rankings,
   ExpenseAnalysisSummary,
+  ExpenseAnalysisItem,
   DailyAnalysisRecord,
   FinancialExecutiveSummary,
   PreExportValidationResult,
@@ -15,6 +16,7 @@ import {
 } from '../types/reportTypes';
 import { ParsedSettlementData } from './settlementParser';
 import { normalizeKey, parseNumber } from './matchingEngine';
+import { IncomeSummaryData } from '../types/fileTypes';
 
 function getItemIncome(item: MatchedOrderItem): number {
   if (item.incomeAmount !== undefined && !isNaN(item.incomeAmount)) {
@@ -28,21 +30,27 @@ function getItemIncome(item: MatchedOrderItem): number {
  * Strict Compliance:
  * - NO guessing/inventing fee numbers
  * - Multi-item orders share order-level settlement proportionally without double counting
+ * - When Income Sheet Summary exists, uses official Shopee released net and platform fee totals
  */
 export function buildTransactionLedger(
   items: MatchedOrderItem[],
   settlementData: ParsedSettlementData | null,
+  incomeSummary?: IncomeSummaryData | null,
 ): TransactionLedgerRecord[] {
   // Pre-calculate order-level aggregates from items to handle proportional allocation
   const orderGrossMap = new Map<string, number>();
   const orderItemCountMap = new Map<string, number>();
+  let totalAllItemsNet = 0;
 
   for (const item of items) {
     const norm = normalizeKey(item.orderNumber);
     const inc = getItemIncome(item);
+    totalAllItemsNet += inc;
     orderGrossMap.set(norm, (orderGrossMap.get(norm) || 0) + inc);
     orderItemCountMap.set(norm, (orderItemCountMap.get(norm) || 0) + 1);
   }
+
+  const hasSummary = Boolean(incomeSummary && incomeSummary.totalPengeluaran > 0);
 
   return items.map((item, index) => {
     const normOrder = normalizeKey(item.orderNumber);
@@ -52,6 +60,8 @@ export function buildTransactionLedger(
 
     // Weight of this item in the order
     const ratio = orderTotalGross > 0 ? itemInc / orderTotalGross : 1 / itemCount;
+    // Weight across entire report
+    const reportRatio = totalAllItemsNet > 0 ? itemInc / totalAllItemsNet : 1 / (items.length || 1);
 
     const settlement = settlementData ? settlementData.orderMap.get(normOrder) : null;
 
@@ -63,9 +73,10 @@ export function buildTransactionLedger(
     let otherFee = 0;
     let refund = 0;
     let adjustment = 0;
-    let discount = 0;
+    let discount = item.discount || 0;
     let totalExpense = 0;
     let netRevenue = itemInc;
+    let grossRevenue = itemInc;
     let auditNote = '';
 
     if (settlement) {
@@ -82,11 +93,26 @@ export function buildTransactionLedger(
 
       totalExpense = adminFee + paymentFee + serviceFee + shippingCost + promotionFee + otherFee;
       netRevenue = Math.round(settlement.netSettlementAmount * ratio * 100) / 100;
+      grossRevenue = netRevenue + totalExpense;
       auditNote = `Biaya aktual diverifikasi dari Settlement baris #${settlement.sourceRow}`;
+    } else if (hasSummary && incomeSummary) {
+      // Allocate verified official fees from Income Summary Sheet
+      adminFee = Math.round(incomeSummary.adminFee * reportRatio * 100) / 100;
+      paymentFee = Math.round(incomeSummary.paymentFee * reportRatio * 100) / 100;
+      serviceFee = Math.round((incomeSummary.serviceFeeTotal + incomeSummary.freeShippingXtraTotal) * reportRatio * 100) / 100;
+      shippingCost = Math.round(incomeSummary.shippingCostTotal * reportRatio * 100) / 100;
+      promotionFee = Math.round(incomeSummary.promotionFeeTotal * reportRatio * 100) / 100;
+      otherFee = Math.round((incomeSummary.otherFeesTotal || incomeSummary.shippingProgramFee) * reportRatio * 100) / 100;
+
+      totalExpense = adminFee + paymentFee + serviceFee + shippingCost + promotionFee + otherFee;
+      netRevenue = itemInc;
+      grossRevenue = item.originalPrice && item.originalPrice > 0 ? item.originalPrice : netRevenue + totalExpense;
+      auditNote = 'Biaya aktual diverifikasi dari Ringkasan Penghasilan Shopee (Sheet Summary)';
     } else {
-      auditNote = settlementData
-        ? 'No. Pesanan tidak ditemukan di file Settlement'
-        : 'Mode Sales Report (File Settlement belum diunggah. Biaya transaksi tidak diestimasi)';
+      grossRevenue = item.originalPrice && item.originalPrice > 0 ? item.originalPrice : itemInc;
+      netRevenue = itemInc;
+      totalExpense = 0;
+      auditNote = 'Mode Sales Report (File Settlement belum diunggah. Biaya transaksi tidak diestimasi)';
     }
 
     const matchType =
@@ -107,8 +133,8 @@ export function buildTransactionLedger(
       variation: item.allOrderVariation || item.variation || '-',
       quantity: item.quantity,
       unitPrice:
-        item.quantity && item.quantity > 0 ? itemInc / item.quantity : null,
-      grossRevenue: itemInc,
+        item.quantity && item.quantity > 0 ? grossRevenue / item.quantity : null,
+      grossRevenue,
       discount,
       shippingCost,
       adminFee,
@@ -322,7 +348,71 @@ export function buildExpenseAnalysis(
   orderSummaries: (OrderSummaryRecord | TransactionLedgerRecord)[],
   settlementData: ParsedSettlementData | null,
   totalGrossRevenue: number,
+  incomeSummary?: IncomeSummaryData | null,
 ): ExpenseAnalysisSummary {
+  // 1. If official Income Summary Sheet is available, use verified breakdown
+  if (incomeSummary && incomeSummary.totalPengeluaran > 0) {
+    const gross = totalGrossRevenue > 0 ? totalGrossRevenue : incomeSummary.totalIncomeGross;
+    const items: ExpenseAnalysisItem[] = [
+      {
+        feeName: 'Biaya Platform (Admin, Proses & Pembayaran)',
+        category: 'Komisi Platform',
+        amount: incomeSummary.platformFeesTotal,
+        isDeduction: true,
+        note: `Admin: Rp ${incomeSummary.adminFee.toLocaleString('id-ID')} | Pembayaran: Rp ${incomeSummary.paymentFee.toLocaleString('id-ID')} | Proses: Rp ${incomeSummary.orderProcessingFee.toLocaleString('id-ID')}`,
+        percentageOfGross: gross > 0 ? (incomeSummary.platformFeesTotal / gross) * 100 : 0,
+      },
+      {
+        feeName: 'Biaya Promosi (AMS & Saldo Iklan Otomatis)',
+        category: 'Pemasaran & Iklan',
+        amount: incomeSummary.promotionFeeTotal,
+        isDeduction: true,
+        note: `Isi Saldo Otomatis: Rp ${incomeSummary.autoTopUpSaldo.toLocaleString('id-ID')} | Komisi AMS: Rp ${incomeSummary.amsCommission.toLocaleString('id-ID')}`,
+        percentageOfGross: gross > 0 ? (incomeSummary.promotionFeeTotal / gross) * 100 : 0,
+      },
+      {
+        feeName: 'Biaya Gratis Ongkir XTRA',
+        category: 'Program Promosi',
+        amount: incomeSummary.freeShippingXtraTotal,
+        isDeduction: true,
+        note: 'Biaya keikutsertaan program Gratis Ongkir XTRA Shopee',
+        percentageOfGross: gross > 0 ? (incomeSummary.freeShippingXtraTotal / gross) * 100 : 0,
+      },
+      {
+        feeName: 'Biaya Layanan & Shopee Live XTRA',
+        category: 'Layanan Fitur',
+        amount: incomeSummary.serviceFeeTotal,
+        isDeduction: true,
+        note: `Shopee Live XTRA: Rp ${incomeSummary.shopeeLiveXtraFee.toLocaleString('id-ID')} | Transaksi: Rp ${incomeSummary.transactionFee.toLocaleString('id-ID')}`,
+        percentageOfGross: gross > 0 ? (incomeSummary.serviceFeeTotal / gross) * 100 : 0,
+      },
+      {
+        feeName: 'Total Biaya Pengiriman Ditanggung Penjual',
+        category: 'Logistik',
+        amount: incomeSummary.shippingCostTotal,
+        isDeduction: true,
+        note: 'Selisih ongkos kirim aktual terhadap subsidi Shopee',
+        percentageOfGross: gross > 0 ? (incomeSummary.shippingCostTotal / gross) * 100 : 0,
+      },
+      {
+        feeName: 'Biaya Lainnya (Program Hemat Biaya Kirim)',
+        category: 'Operasional',
+        amount: incomeSummary.otherFeesTotal || incomeSummary.shippingProgramFee,
+        isDeduction: true,
+        note: 'Biaya keikutsertaan program hemat ongkir / operasional lainnya',
+        percentageOfGross: gross > 0 ? ((incomeSummary.otherFeesTotal || incomeSummary.shippingProgramFee) / gross) * 100 : 0,
+      },
+    ].filter((i) => i.amount > 0);
+
+    return {
+      items,
+      totalExpense: incomeSummary.totalPengeluaran,
+      percentageOfGross: gross > 0 ? (incomeSummary.totalPengeluaran / gross) * 100 : 0,
+      settlementAvailable: true,
+    };
+  }
+
+  // 2. If separate settlement file is available
   if (!settlementData) {
     return {
       items: [],
@@ -497,6 +587,7 @@ export function buildFinancialExecutiveSummary(
   period?: string,
   summary?: FinalReportSummary,
   explicitSettlementData?: ParsedSettlementData | null,
+  incomeSummary?: IncomeSummaryData | null,
 ): FinancialExecutiveSummary {
   const settlementData: ParsedSettlementData | null =
     explicitSettlementData !== undefined
@@ -505,16 +596,28 @@ export function buildFinancialExecutiveSummary(
       ? (settlementDataOrExpenses as ParsedSettlementData)
       : null;
 
-  const mode: ReportMode = settlementData ? 'FINANCIAL_REPORT' : 'SALES_REPORT';
+  const hasSummary = Boolean(incomeSummary && (incomeSummary.totalIncomeGross > 0 || incomeSummary.totalPengeluaran > 0));
+  const mode: ReportMode = (settlementData || hasSummary) ? 'FINANCIAL_REPORT' : 'SALES_REPORT';
 
   const totalOrders = orders.length;
   const totalUniqueSkus = products.length;
   const totalQuantity = orders.reduce((sum, o) => sum + o.totalQuantity, 0);
-  const totalGrossRevenue = orders.reduce((sum, o) => sum + o.grossRevenue, 0);
+  
+  const totalGrossRevenue = hasSummary && incomeSummary && incomeSummary.totalIncomeGross > 0
+    ? incomeSummary.totalIncomeGross
+    : orders.reduce((sum, o) => sum + o.grossRevenue, 0);
+
   const totalDiscount = orders.reduce((sum, o) => sum + o.discount, 0);
-  const totalExpense = orders.reduce((sum, o) => sum + o.totalExpense, 0);
+
+  const totalExpense = hasSummary && incomeSummary && incomeSummary.totalPengeluaran > 0
+    ? incomeSummary.totalPengeluaran
+    : orders.reduce((sum, o) => sum + o.totalExpense, 0);
+
   const totalRefund = orders.reduce((sum, o) => sum + o.refund, 0);
-  const netRevenue = orders.reduce((sum, o) => sum + o.netRevenue, 0);
+
+  const netRevenue = hasSummary && incomeSummary && incomeSummary.totalYangDilepasNet > 0
+    ? incomeSummary.totalYangDilepasNet
+    : orders.reduce((sum, o) => sum + o.netRevenue, 0);
 
   const averageOrderValue = totalOrders > 0 ? totalGrossRevenue / totalOrders : 0;
   const averageRevenuePerSku = totalUniqueSkus > 0 ? totalGrossRevenue / totalUniqueSkus : 0;

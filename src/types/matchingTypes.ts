@@ -19,6 +19,8 @@ export interface MatchedOrderItem {
   orderNumber: string;
   incomeSku: string;
   productName: string;
+  originalPrice?: number;
+  discount?: number;
   totalIncome: string | number;
   incomeAmount?: number;
   orderDate?: string;

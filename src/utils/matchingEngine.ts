@@ -221,6 +221,8 @@ export function runMatchingEngine(
   const orderCol = normIncomeHeaders.indexOf('no. pesanan');
   const skuCol = normIncomeHeaders.indexOf('id produk');
   const productNameCol = normIncomeHeaders.indexOf('nama produk');
+  const originalPriceCol = normIncomeHeaders.findIndex((h) => h.includes('harga asli') || h.includes('harga produk'));
+  const discountCol = normIncomeHeaders.findIndex((h) => h.includes('diskon produk') || h.includes('total diskon'));
   const incomeCol = normIncomeHeaders.indexOf('total penghasilan');
   const dateCol = normIncomeHeaders.findIndex((h) => h.includes('waktu') || h.includes('tanggal'));
   const variationCol = normIncomeHeaders.indexOf('nama variasi');
@@ -259,6 +261,8 @@ export function runMatchingEngine(
     const rawOrder = orderCol !== -1 ? row[orderCol] : '';
     const rawSku = skuCol !== -1 ? row[skuCol] : '';
     const rawProductName = productNameCol !== -1 ? row[productNameCol] : '';
+    const rawOriginalPrice = originalPriceCol !== -1 ? row[originalPriceCol] : undefined;
+    const rawDiscount = discountCol !== -1 ? row[discountCol] : undefined;
     const rawTotalIncome = incomeCol !== -1 ? row[incomeCol] : '';
 
     const normalizedOrder = normalizeKey(rawOrder);
@@ -379,6 +383,8 @@ export function runMatchingEngine(
       orderNumber: String(rawOrder || '').trim(),
       incomeSku: String(rawSku || '').trim(),
       productName: String(rawProductName || '').trim(),
+      originalPrice: rawOriginalPrice !== undefined && rawOriginalPrice !== null ? parseNumber(rawOriginalPrice) : undefined,
+      discount: rawDiscount !== undefined && rawDiscount !== null ? parseNumber(rawDiscount) : undefined,
       totalIncome:
         rawTotalIncome !== undefined && rawTotalIncome !== null
           ? typeof rawTotalIncome === 'number'

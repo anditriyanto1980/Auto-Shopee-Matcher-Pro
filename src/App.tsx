@@ -500,6 +500,7 @@ export default function App() {
             period={reportPeriod}
             onBackToMatching={() => setCurrentStage('stage2')}
             onSelectRow={(item) => setSelectedDetailItem(item)}
+            incomeFile={incomeFile}
             settlementFile={settlementFile}
             rawIncomeRows={incomeFile?.rawRows || null}
             rawAllOrderCurrentRows={allOrderCurrentFile?.rawRows || null}

@@ -60,6 +60,7 @@ interface FinalReportDashboardProps {
   period: string;
   onBackToMatching: () => void;
   onSelectRow: (item: MatchedOrderItem) => void;
+  incomeFile?: UploadedFile | null;
   settlementFile?: UploadedFile | null;
   rawIncomeRows?: (string | number | boolean | null)[][] | null;
   rawAllOrderCurrentRows?: (string | number | boolean | null)[][] | null;
@@ -76,6 +77,7 @@ export const FinalReportDashboard: React.FC<FinalReportDashboardProps> = ({
   period,
   onBackToMatching,
   onSelectRow,
+  incomeFile,
   settlementFile,
   rawIncomeRows,
   rawAllOrderCurrentRows,
@@ -91,16 +93,21 @@ export const FinalReportDashboard: React.FC<FinalReportDashboardProps> = ({
   const [exportError, setExportError] = useState<string | null>(null);
   const [exportSuccessMessage, setExportSuccessMessage] = useState<string | null>(null);
   const [showValidationModal, setShowValidationModal] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
-  // 1. Settlement Parsing
+  // 1. Settlement & Income Summary Parsing
   const settlementData = useMemo(() => {
     return parseSettlementFile(settlementFile || null);
   }, [settlementFile]);
 
+  const incomeSummary = useMemo(() => {
+    return incomeFile?.incomeSummary || null;
+  }, [incomeFile]);
+
   // 2. Normalized Transaction Ledger
   const ledger = useMemo(() => {
-    return buildTransactionLedger(results, settlementData);
-  }, [results, settlementData]);
+    return buildTransactionLedger(results, settlementData, incomeSummary);
+  }, [results, settlementData, incomeSummary]);
 
   // 3. Order Summary (1 row per order, no double counting)
   const orderSummaries = useMemo(() => {
@@ -119,13 +126,16 @@ export const FinalReportDashboard: React.FC<FinalReportDashboardProps> = ({
 
   // 6. Total Gross Revenue
   const totalGrossRevenue = useMemo(() => {
+    if (incomeSummary && incomeSummary.totalIncomeGross > 0) {
+      return incomeSummary.totalIncomeGross;
+    }
     return ledger.reduce((sum, item) => sum + item.grossRevenue, 0);
-  }, [ledger]);
+  }, [ledger, incomeSummary]);
 
   // 7. Expense Analysis
   const expenses = useMemo(() => {
-    return buildExpenseAnalysis(ledger, settlementData, totalGrossRevenue);
-  }, [ledger, settlementData, totalGrossRevenue]);
+    return buildExpenseAnalysis(ledger, settlementData, totalGrossRevenue, incomeSummary);
+  }, [ledger, settlementData, totalGrossRevenue, incomeSummary]);
 
   // 8. Daily Analysis
   const daily = useMemo(() => {
@@ -142,8 +152,9 @@ export const FinalReportDashboard: React.FC<FinalReportDashboardProps> = ({
       period,
       summary,
       settlementData,
+      incomeSummary,
     );
-  }, [ledger, orderSummaries, products, expenses, period, summary, settlementData]);
+  }, [ledger, orderSummaries, products, expenses, period, summary, settlementData, incomeSummary]);
 
   // 10. Pre-Export 8-Point Checkpoint Validation
   const preExportValidation = useMemo(() => {
@@ -198,7 +209,7 @@ export const FinalReportDashboard: React.FC<FinalReportDashboardProps> = ({
   }, [results]);
 
   // Handle Export Excel with 12 Sheets & Strict Validation
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
     setExportError(null);
     setExportSuccessMessage(null);
 
@@ -211,34 +222,43 @@ export const FinalReportDashboard: React.FC<FinalReportDashboardProps> = ({
       return;
     }
 
-    const exportRes = exportToExcel({
-      results,
-      summary,
-      reconciliation,
-      duplicates,
-      period,
-      ledger,
-      orderSummaries,
-      products,
-      top10,
-      expenses,
-      daily,
-      executiveSummary,
-      rawIncomeRows: rawIncomeRows || undefined,
-      rawAllOrderCurrentRows: rawAllOrderCurrentRows || undefined,
-      rawAllOrderPrevRows: rawAllOrderPrevRows || undefined,
-      rawSettlementRows: rawSettlementRows || undefined,
-    });
+    setIsExporting(true);
+    try {
+      const exportRes = await exportToExcel({
+        results,
+        summary,
+        reconciliation,
+        duplicates,
+        period,
+        ledger,
+        orderSummaries,
+        products,
+        top10,
+        expenses,
+        daily,
+        executiveSummary,
+        rawIncomeRows: rawIncomeRows || undefined,
+        rawAllOrderCurrentRows: rawAllOrderCurrentRows || undefined,
+        rawAllOrderPrevRows: rawAllOrderPrevRows || undefined,
+        rawSettlementRows: rawSettlementRows || undefined,
+      });
 
-    if (exportRes.success) {
-      setExportSuccessMessage(
-        `✓ File Excel "${exportRes.fileName}" (12 Sheet Profesional) berhasil dibuat dan diunduh.`,
-      );
-      setTimeout(() => setExportSuccessMessage(null), 10000);
-    } else {
+      if (exportRes.success) {
+        setExportSuccessMessage(
+          `✓ File Excel presentasi profesional "${exportRes.fileName}" (12 Sheet Berformat Lengkap) berhasil diunduh.`,
+        );
+        setTimeout(() => setExportSuccessMessage(null), 10000);
+      } else {
+        setExportError(
+          exportRes.error || 'Export Excel gagal. Data aplikasi tetap aman. Silakan coba kembali.',
+        );
+      }
+    } catch (err) {
       setExportError(
-        exportRes.error || 'Export Excel gagal. Data aplikasi tetap aman. Silakan coba kembali.',
+        err instanceof Error ? err.message : 'Terjadi kesalahan saat memproses laporan Excel.',
       );
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -329,10 +349,20 @@ export const FinalReportDashboard: React.FC<FinalReportDashboardProps> = ({
           {/* Export Excel Button */}
           <button
             onClick={handleExportExcel}
-            className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl font-bold text-xs sm:text-sm text-white bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
+            disabled={isExporting}
+            className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl font-bold text-xs sm:text-sm text-white bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] shadow-md shadow-emerald-600/20 transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            <Download className="w-4 h-4" />
-            <span>EXPORT 12-SHEET EXCEL (.XLSX)</span>
+            {isExporting ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <span>MEMBUAT FORMAT PRESENTASI...</span>
+              </>
+            ) : (
+              <>
+                <Download className="w-4 h-4" />
+                <span>EXPORT 12-SHEET EXCEL (.XLSX)</span>
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -368,14 +398,34 @@ export const FinalReportDashboard: React.FC<FinalReportDashboardProps> = ({
         </div>
       )}
 
+      {/* Notice if Income Sheet Summary is detected */}
+      {incomeSummary?.hasSummarySheet && (
+        <div className="bg-emerald-50/80 border border-emerald-200 rounded-2xl p-4 text-xs sm:text-sm text-emerald-900 flex items-start gap-3">
+          <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <div className="font-bold text-emerald-950 flex items-center gap-2">
+              <span>Ringkasan Finansial Resmi Shopee Terverifikasi (Sheet Summary Terdeteksi)</span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-200 text-emerald-800 font-extrabold uppercase">
+                Audit Pass
+              </span>
+            </div>
+            <p className="text-emerald-800 leading-relaxed">
+              Struktur keuangan diekstrak langsung dari sheet <strong>Summary</strong> file Income (Sudah Dilepas). 
+              Angka <strong>{formatRupiah(executiveSummary.netRevenue)}</strong> adalah <strong>Pendapatan Bersih (Total yang Dilepas ke Saldo Penjual)</strong>, bukan pendapatan kotor. 
+              Total Pendapatan Kotor penjualan adalah <strong>{formatRupiah(executiveSummary.totalGrossRevenue)}</strong> dengan Total Beban Potongan Biaya Platform sebesar <strong>{formatRupiah(executiveSummary.totalExpense)}</strong>.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Notice if Settlement is Missing */}
-      {executiveSummary.mode === 'SALES_REPORT' && (
+      {executiveSummary.mode === 'SALES_REPORT' && !incomeSummary?.hasSummarySheet && (
         <div className="bg-amber-50/70 border border-amber-200/80 rounded-2xl p-4 text-xs sm:text-sm text-amber-900 flex items-start gap-3">
           <Info className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
           <div>
             <span className="font-bold">Informasi Mode Laporan: </span>
             Laporan saat ini beroperasi pada <strong>Mode 1 (Sales Report)</strong> karena file
-            Settlement (Rincian Pelepasan Dana) belum diunggah. Sesuai prinsip integritas finansial
+            Settlement (Rincian Pelepasan Dana) atau Sheet Summary belum diunggah. Sesuai prinsip integritas finansial
             akuntansi, beban biaya per-transaksi tidak diestimasi atau dikarang palsu. Pendapatan
             Kotor disajikan akurat. Untuk mengaktifkan rincian potongan biaya aktual (Admin,
             Layanan, Pembayaran), silakan unggah file Settlement di Tahap 1.

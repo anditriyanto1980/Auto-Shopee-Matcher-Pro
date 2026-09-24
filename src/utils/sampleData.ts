@@ -122,9 +122,68 @@ export function createSampleIncomeFile(): File {
     ],
   ];
 
-  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  const summarySheetData: (string | number | null)[][] = [
+    ['Laporan Penghasilan', '', '', ''],
+    ['', '', '', ''],
+    ['', '', '', ''],
+    ['', '', '', ''],
+    ['Rincian Laporan', '', '', ''],
+    ['Username (Penjual)', 'allkurma', '', ''],
+    ['Dari', '2026-09-01', '', ''],
+    ['ke', '2026-09-23', '', ''],
+    ['', '', '', ''],
+    ['Ringkasan Penghasilan', '', '', 'Rp'],
+    ['1. Total Pendapatan', '', '', 138515379],
+    ['Subtotal Pesanan', '', '', 138119278],
+    ['', 'Harga Asli Produk', 138509278, ''],
+    ['', 'Jumlah Pengembalian Dana ke Pembeli', -390000, ''],
+    ['Voucher & Subsidi', '', '', 396101],
+    ['', 'Voucher disponsor oleh Penjual', -173300, ''],
+    ['', 'Cashback Koin disponsori Penjual', 0, ''],
+    ['', 'Diskon Produk dari Shopee', 569401, ''],
+    ['', 'Voucher co-fund disponsor oleh Penjual', 0, ''],
+    ['', 'Cashback Koin Co-fund disponsori Penjual', 0, ''],
+    ['2. Total Pengeluaran', '', '', -33562411],
+    ['Total Biaya Pengiriman', '', '', -1413481],
+    ['', 'Ongkir Dibayar Pembeli', 734916, ''],
+    ['', 'Ongkir yang Diteruskan oleh Shopee ke Jasa Kirim', -21924512, ''],
+    ['', 'Diskon Ongkir Ditanggung Jasa Kirim', 0, ''],
+    ['', 'Gratis Ongkir dari Shopee', 19776115, ''],
+    ['', 'Ongkos Kirim Pengembalian Barang', 0, ''],
+    ['', 'Kembali ke Biaya Pengiriman Pengirim', 0, ''],
+    ['', 'Pengembalian Biaya Kirim', 0, ''],
+    ['Biaya Platform', '', '', -13391294],
+    ['', 'Biaya Administrasi (termasuk PPN 11%)', -9416828, ''],
+    ['', 'Biaya Proses Pesanan', -1481250, ''],
+    ['', 'Biaya Pembayaran', -2493216, ''],
+    ['Biaya Gratis Ongkir XTRA', '', '', -6907656],
+    ['', 'Biaya Gratis Ongkir XTRA - Ukuran Khusus (Kategori E)', -2697799, ''],
+    ['', 'Biaya Gratis Ongkir XTRA - Ukuran Biasa (Kategori E)', -4209857, ''],
+    ['Biaya Layanan', '', '', -2093225],
+    ['', 'Biaya Transaksi', -313658, ''],
+    ['', 'Biaya Layanan Shopee Live XTRA', -1779567, ''],
+    ['Biaya Promosi', '', '', -9341655],
+    ['', 'Biaya Kampanye', 0, ''],
+    ['', 'Biaya Komisi AMS', -1653856, ''],
+    ['', 'Biaya Isi Saldo Otomatis (dari Penghasilan)', -7687799, ''],
+    ['Biaya Lainnya', '', '', -415100],
+    ['', 'Biaya Program Hemat Biaya Kirim', -415100, ''],
+    ['', 'Premi', 0, ''],
+    ['Pajak', '', '', 0],
+    ['', 'PPh 22', 0, ''],
+    ['', '', '', ''],
+    ['3. Total yang Dilepas', '', '', 104952968],
+    ['', '', '', ''],
+    ['Nilai Lainnya', '', '', ''],
+    ['', 'Promo Gratis Ongkir dari Penjual', -1401481, ''],
+  ];
+
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Penghasilan');
+  const summaryWs = XLSX.utils.aoa_to_sheet(summarySheetData);
+  XLSX.utils.book_append_sheet(wb, summaryWs, 'Summary');
+
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  XLSX.utils.book_append_sheet(wb, ws, 'Pesanan');
 
   const u8 = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
   return new File([u8], 'Income.sudah_dilepas.id.20260901_20260923.xlsx', {
